@@ -1,0 +1,15 @@
+{
+  "name": "github-profile-design",
+  "private": true,
+  "type": "module",
+  "description": "Builds the animated SVG artwork for the GitHub profile README.",
+  "scripts": {
+    "build": "node build.mjs",
+    "preview": "python3 preview.py"
+  },
+  "devDependencies": {
+    "@fontsource/inter": "^5.2.0",
+    "@fontsource/noto-serif-display": "^5.2.0",
+    "opentype.js": "^1.3.4"
+  }
+}

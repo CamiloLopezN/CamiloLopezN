@@ -1,0 +1,51 @@
+{
+  "site": "https://www.cristianlopez.site",
+  "banner": {
+    "eyebrow": "Cristian López · Agentes de IA",
+    "line1": "Pongo agentes de IA a trabajar.",
+    "line2": "Y te muestro cómo.",
+    "status": "7 agentes trabajando"
+  },
+  "socials": [
+    { "id": "youtube", "name": "YouTube", "url": "https://www.youtube.com/@milodev10" },
+    { "id": "tiktok", "name": "TikTok", "url": "https://www.tiktok.com/@milodev10" },
+    { "id": "instagram", "name": "Instagram", "url": "https://www.instagram.com/milodev1031" },
+    { "id": "linkedin", "name": "LinkedIn", "url": "https://www.linkedin.com/in/cristian-lopez-dev/" },
+    { "id": "web", "name": "cristianlopez.site", "url": "https://www.cristianlopez.site" }
+  ],
+  "sections": {
+    "episode": { "title": "Último episodio", "icon": "play" },
+    "projects": { "title": "Lo que construyo", "icon": "layers" },
+    "career": { "title": "Trayectoria", "icon": "briefcase" }
+  },
+  "episode": {
+    "label": "Episodio",
+    "number": 0,
+    "date": "28 sep 2026",
+    "title": "Mi equipo no duerme",
+    "description": "Siete agentes de IA hacen los videos de mis dos apps. Así trabajan, y el error que casi me tumba una cuenta.",
+    "cover": "img/video-cover.webp",
+    "button": "Ver en YouTube",
+    "alsoOn": "También en TikTok e Instagram",
+    "url": "https://youtu.be/TqvCwIajeyY"
+  },
+  "projects": [
+    { "id": "lumia", "eyebrow": "App", "name": "Lumia AI", "text": "Para estudiar con IA. Aprende jugando.", "linkLabel": "lumia-ai.co", "url": "https://lumia-ai.co", "icon": "book" },
+    { "id": "scope", "eyebrow": "App", "name": "Scope", "text": "Pronóstico, estadística y previa deportiva.", "linkLabel": "scope-ai.co", "url": "https://scope-ai.co", "icon": "bars" },
+    { "id": "studio", "eyebrow": "Sistema", "name": "Studio", "text": "7 agentes que hacen 4 videos al día en mi PC.", "linkLabel": "Ver el mapa", "url": "https://github.com/CamiloLopezN/CamiloLopezN/blob/main/resources/team-map.pdf", "icon": "robot" }
+  ],
+  "teamMap": {
+    "badge": "Gratis",
+    "title": "El mapa de mi equipo de 7 agentes",
+    "text": "Qué hace cada uno, con qué herramienta lo hago y cómo armar el tuyo en 5 pasos.",
+    "button": "Llévatelo gratis",
+    "url": "https://github.com/CamiloLopezN/CamiloLopezN/blob/main/resources/team-map.pdf"
+  },
+  "career": {
+    "headline": "Más de cuatro años haciendo software para empresas, universidades y entidades del Estado.",
+    "companiesLabel": "Para",
+    "companies": ["Ecopetrol", "Sodexo", "Ministerio del Trabajo", "Ministerio de Minas", "Universidad del Rosario", "UNAD", "Bicode", "W-Tech"],
+    "todayLabel": "Hoy trabajo con",
+    "today": ["Claude Code", "Gemini", "Godot", "Astro", "TypeScript", "Python", "Node.js"]
+  }
+}

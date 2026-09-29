@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="141" height="52" viewBox="0 0 141 52" style="--card:#221E1A"><style>
+*{transform-box:fill-box}
+.rise{animation:rise .9s cubic-bezier(.22,1,.36,1) both}
+.fade{animation:fade .8s ease both}
+.pop{transform-origin:50% 100%;animation:pop 1s cubic-bezier(.22,1,.36,1) both}
+.draw{stroke-dasharray:1;animation:draw 1.6s cubic-bezier(.22,1,.36,1) .45s both}
+.nudge{animation:nudge 2.8s ease-in-out 2s infinite}
+.pulse{transform-origin:50% 50%;animation:pulse 2.2s ease-out infinite}
+.twinkle{transform-origin:50% 50%;animation:twinkle 2.6s ease-in-out infinite}
+.grow{transform-origin:50% 100%;animation:grow 2.6s cubic-bezier(.22,1,.36,1) infinite}
+.blink{transform-origin:50% 50%;animation:blink 4.5s ease-in-out 1s infinite}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes pop{0%{opacity:0;transform:translateY(16px) scale(.86)}55%{opacity:1;transform:translateY(-4px) scale(1.03)}80%{transform:translateY(1px) scale(.995)}100%{opacity:1;transform:none}}
+@keyframes draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+@keyframes nudge{0%,55%,100%{transform:none}70%{transform:translateX(4px)}}
+@keyframes pulse{0%{transform:scale(1);opacity:.6}100%{transform:scale(2.8);opacity:0}}
+@keyframes twinkle{0%,100%{opacity:.2;transform:scale(.6)}50%{opacity:1;transform:scale(1)}}
+@keyframes grow{0%,100%{transform:scaleY(.55)}50%{transform:scaleY(1)}}
+@keyframes blink{0%,90%,100%{transform:scaleY(1)}94%{transform:scaleY(.15)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style><defs>
+<filter id="shadow" x="-10%" y="-15%" width="120%" height="140%"><feDropShadow dx="0" dy="8" stdDeviation="11" flood-color="#000000" flood-opacity="0.35"/></filter>
+<filter id="edge" x="-8%" y="-8%" width="116%" height="116%"><feDropShadow dx="0" dy="0" stdDeviation=".7" flood-color="#F4F1EA" flood-opacity=".85"/></filter>
+</defs>
+<rect x="4.5" y="4.5" width="132" height="43" rx="21.5" fill="#221E1A" stroke="#F4F1EA1F"/>
+<g transform="translate(24 17.5) scale(0.7083333333333334)" color="#F4F1EA" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path fill="currentColor" stroke="none" d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></g>
+<path fill="#F4F1EA" d="M56.4 31.5L54.4 31.5L54.4 27.3L50.4 20.6L52.7 20.6L54.6 24.0Q54.9 24.6 55.1 25.1L55.1 25.1Q55.3 25.3 55.4 25.6L55.4 25.6Q55.5 25.3 55.6 25.1L55.6 25.1Q55.9 24.5 56.2 24.0L56.2 24.0L58.1 20.6L60.3 20.6L56.4 27.3L56.4 31.5ZM65.3 31.7L65.3 31.7Q64.1 31.7 63.2 31.1Q62.3 30.6 61.8 29.7Q61.4 28.7 61.4 27.4L61.4 27.4Q61.4 26.2 61.8 25.2Q62.3 24.3 63.2 23.7Q64.1 23.2 65.3 23.2L65.3 23.2Q66.5 23.2 67.3 23.7Q68.2 24.3 68.7 25.2Q69.2 26.2 69.2 27.4L69.2 27.4Q69.2 28.7 68.7 29.7Q68.2 30.6 67.3 31.1Q66.5 31.7 65.3 31.7ZM65.3 30.1L65.3 30.1Q65.9 30.1 66.4 29.8Q66.8 29.4 67.0 28.8Q67.2 28.2 67.2 27.4L67.2 27.4Q67.2 26.7 67.0 26.1Q66.8 25.5 66.4 25.1Q65.9 24.8 65.3 24.8L65.3 24.8Q64.6 24.8 64.2 25.1Q63.7 25.5 63.5 26.1Q63.3 26.7 63.3 27.4L63.3 27.4Q63.3 28.2 63.5 28.8Q63.7 29.4 64.2 29.8Q64.6 30.1 65.3 30.1ZM73.6 31.6L73.6 31.6Q72.8 31.6 72.2 31.2Q71.5 30.9 71.2 30.2Q70.8 29.5 70.8 28.5L70.8 28.5L70.8 23.3L72.7 23.3L72.7 28.2Q72.7 29.0 73.2 29.5Q73.6 30.0 74.4 30.0L74.4 30.0Q74.9 30.0 75.3 29.8Q75.6 29.5 75.9 29.1Q76.1 28.7 76.1 28.1L76.1 28.1L76.1 23.3L78.0 23.3L78.0 31.5L76.2 31.5L76.2 29.9Q75.9 30.7 75.3 31.1L75.3 31.1Q74.6 31.6 73.6 31.6ZM83.0 22.2L79.6 22.2L79.6 20.6L88.3 20.6L88.3 22.2L85.0 22.2L85.0 31.5L83.0 31.5L83.0 22.2ZM92.7 31.6L92.7 31.6Q91.9 31.6 91.3 31.2Q90.6 30.9 90.3 30.2Q89.9 29.5 89.9 28.5L89.9 28.5L89.9 23.3L91.8 23.3L91.8 28.2Q91.8 29.0 92.3 29.5Q92.7 30.0 93.4 30.0L93.4 30.0Q93.9 30.0 94.3 29.8Q94.7 29.5 95.0 29.1Q95.2 28.7 95.2 28.1L95.2 28.1L95.2 23.3L97.1 23.3L97.1 31.5L95.3 31.5L95.3 29.9Q94.9 30.7 94.4 31.1L94.4 31.1Q93.7 31.6 92.7 31.6ZM103.4 31.6L103.4 31.6Q102.7 31.6 102.3 31.4Q101.8 31.2 101.5 30.8Q101.2 30.5 101.1 30.2L101.1 30.2L101.0 30.2L101.0 31.5L99.1 31.5L99.1 20.6L101.0 20.6L101.0 24.7L101.1 24.7Q101.2 24.4 101.5 24.0Q101.8 23.7 102.3 23.5Q102.7 23.2 103.4 23.2L103.4 23.2Q104.4 23.2 105.2 23.7Q105.9 24.2 106.4 25.1Q106.8 26.1 106.8 27.4L106.8 27.4Q106.8 28.8 106.4 29.7Q105.9 30.7 105.2 31.2Q104.4 31.6 103.4 31.6ZM102.9 30.1L102.9 30.1Q103.6 30.1 104.0 29.7Q104.4 29.4 104.6 28.8Q104.9 28.2 104.9 27.4L104.9 27.4Q104.9 26.7 104.6 26.1Q104.4 25.5 104.0 25.1Q103.6 24.8 102.9 24.8L102.9 24.8Q102.3 24.8 101.9 25.1Q101.4 25.4 101.2 26.0Q101.0 26.6 101.0 27.4L101.0 27.4Q101.0 28.2 101.2 28.8Q101.4 29.4 101.9 29.7Q102.3 30.1 102.9 30.1ZM112.1 31.7L112.1 31.7Q110.9 31.7 110.0 31.1Q109.1 30.6 108.6 29.7Q108.1 28.7 108.1 27.5L108.1 27.5Q108.1 26.2 108.6 25.2Q109.1 24.3 109.9 23.7Q110.8 23.2 112.0 23.2L112.0 23.2Q112.7 23.2 113.4 23.5Q114.1 23.7 114.6 24.2Q115.1 24.7 115.4 25.5Q115.7 26.3 115.7 27.3L115.7 27.3L115.7 27.9L110.0 27.9Q110.0 28.6 110.3 29.1L110.3 29.1Q110.5 29.6 111.0 29.9Q111.5 30.2 112.1 30.2L112.1 30.2Q112.5 30.2 112.9 30.1Q113.2 29.9 113.5 29.7Q113.7 29.5 113.8 29.1L113.8 29.1L115.6 29.5Q115.4 30.1 114.9 30.6Q114.4 31.1 113.7 31.4Q113.0 31.7 112.1 31.7ZM110.0 26.6L110.0 26.6L113.9 26.6Q113.8 26.2 113.7 25.8L113.7 25.8Q113.4 25.3 113.0 25.0Q112.6 24.7 112.0 24.7Q111.3 24.7 110.9 25.0Q110.5 25.3 110.2 25.8L110.2 25.8Q110.1 26.2 110.0 26.6Z"/></svg>

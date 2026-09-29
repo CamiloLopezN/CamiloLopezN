@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="136" height="52" viewBox="0 0 136 52" style="--card:#221E1A"><style>
+*{transform-box:fill-box}
+.rise{animation:rise .9s cubic-bezier(.22,1,.36,1) both}
+.fade{animation:fade .8s ease both}
+.pop{transform-origin:50% 100%;animation:pop 1s cubic-bezier(.22,1,.36,1) both}
+.draw{stroke-dasharray:1;animation:draw 1.6s cubic-bezier(.22,1,.36,1) .45s both}
+.nudge{animation:nudge 2.8s ease-in-out 2s infinite}
+.pulse{transform-origin:50% 50%;animation:pulse 2.2s ease-out infinite}
+.twinkle{transform-origin:50% 50%;animation:twinkle 2.6s ease-in-out infinite}
+.grow{transform-origin:50% 100%;animation:grow 2.6s cubic-bezier(.22,1,.36,1) infinite}
+.blink{transform-origin:50% 50%;animation:blink 4.5s ease-in-out 1s infinite}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes pop{0%{opacity:0;transform:translateY(16px) scale(.86)}55%{opacity:1;transform:translateY(-4px) scale(1.03)}80%{transform:translateY(1px) scale(.995)}100%{opacity:1;transform:none}}
+@keyframes draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+@keyframes nudge{0%,55%,100%{transform:none}70%{transform:translateX(4px)}}
+@keyframes pulse{0%{transform:scale(1);opacity:.6}100%{transform:scale(2.8);opacity:0}}
+@keyframes twinkle{0%,100%{opacity:.2;transform:scale(.6)}50%{opacity:1;transform:scale(1)}}
+@keyframes grow{0%,100%{transform:scaleY(.55)}50%{transform:scaleY(1)}}
+@keyframes blink{0%,90%,100%{transform:scaleY(1)}94%{transform:scaleY(.15)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style><defs>
+<filter id="shadow" x="-10%" y="-15%" width="120%" height="140%"><feDropShadow dx="0" dy="8" stdDeviation="11" flood-color="#000000" flood-opacity="0.35"/></filter>
+<filter id="edge" x="-8%" y="-8%" width="116%" height="116%"><feDropShadow dx="0" dy="0" stdDeviation=".7" flood-color="#F4F1EA" flood-opacity=".85"/></filter>
+</defs>
+<rect x="4.5" y="4.5" width="127" height="43" rx="21.5" fill="#221E1A" stroke="#F4F1EA1F"/>
+<g transform="translate(24 17.5) scale(0.7083333333333334)" color="#F4F1EA" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="21" height="21" rx="4.5" fill="currentColor" stroke="none"/><g fill="var(--card)" stroke="none"><rect x="5.6" y="9.4" width="3.1" height="9" rx=".4"/><circle cx="7.15" cy="6.4" r="1.8"/><path d="M10.6 9.4h3v1.3c.5-.9 1.6-1.6 3.1-1.6 2.5 0 3.3 1.6 3.3 4.1v5.2h-3.1v-4.6c0-1.2-.3-2-1.4-2-1.2 0-1.8.9-1.8 2.2v4.4h-3.1z"/></g></g>
+<path fill="#F4F1EA" d="M57.9 31.5L51.1 31.5L51.1 20.6L53.1 20.6L53.1 29.9L57.9 29.9L57.9 31.5ZM61.4 31.5L59.5 31.5L59.5 23.3L61.4 23.3L61.4 31.5ZM60.4 22.2L60.4 22.2Q60.0 22.2 59.7 21.8Q59.3 21.5 59.3 21.1L59.3 21.1Q59.3 20.7 59.7 20.4Q60.0 20.1 60.4 20.1L60.4 20.1Q60.9 20.1 61.2 20.4Q61.6 20.7 61.6 21.1L61.6 21.1Q61.6 21.5 61.2 21.8Q60.9 22.2 60.4 22.2ZM65.3 26.7L65.3 26.7L65.3 31.5L63.4 31.5L63.4 23.3L65.2 23.3L65.2 24.9Q65.6 24.2 66.1 23.7L66.1 23.7Q66.8 23.2 67.8 23.2L67.8 23.2Q68.6 23.2 69.2 23.6Q69.9 23.9 70.2 24.6Q70.6 25.3 70.6 26.3L70.6 26.3L70.6 31.5L68.7 31.5L68.7 26.6Q68.7 25.8 68.2 25.3Q67.8 24.8 67.1 24.8L67.1 24.8Q66.6 24.8 66.2 25.0Q65.8 25.3 65.5 25.7Q65.3 26.1 65.3 26.7ZM74.5 31.5L72.6 31.5L72.6 20.6L74.5 20.6L74.5 26.6L74.6 26.6L77.6 23.3L79.8 23.3L76.6 26.9L80.0 31.5L77.7 31.5L75.2 28.0L74.5 28.7L74.5 31.5ZM84.8 31.7L84.8 31.7Q83.5 31.7 82.6 31.1Q81.7 30.6 81.3 29.7Q80.8 28.7 80.8 27.5L80.8 27.5Q80.8 26.2 81.2 25.2Q81.7 24.3 82.6 23.7Q83.5 23.2 84.6 23.2L84.6 23.2Q85.4 23.2 86.1 23.5Q86.7 23.7 87.3 24.2Q87.8 24.7 88.1 25.5Q88.4 26.3 88.4 27.3L88.4 27.3L88.4 27.9L82.7 27.9Q82.7 28.6 82.9 29.1L82.9 29.1Q83.2 29.6 83.7 29.9Q84.1 30.2 84.8 30.2L84.8 30.2Q85.2 30.2 85.5 30.1Q85.9 29.9 86.1 29.7Q86.4 29.5 86.5 29.1L86.5 29.1L88.2 29.5Q88.0 30.1 87.6 30.6Q87.1 31.1 86.4 31.4Q85.7 31.7 84.8 31.7ZM82.7 26.6L82.7 26.6L86.5 26.6Q86.5 26.2 86.3 25.8L86.3 25.8Q86.1 25.3 85.7 25.0Q85.3 24.7 84.6 24.7Q84.0 24.7 83.6 25.0Q83.1 25.3 82.9 25.8L82.9 25.8Q82.7 26.2 82.7 26.6ZM93.0 31.6L93.0 31.6Q92.1 31.6 91.3 31.2Q90.5 30.7 90.1 29.7Q89.6 28.8 89.6 27.4L89.6 27.4Q89.6 26.1 90.1 25.1Q90.5 24.2 91.3 23.7Q92.1 23.2 93.0 23.2L93.0 23.2Q93.7 23.2 94.2 23.5Q94.7 23.7 95.0 24.0Q95.2 24.4 95.4 24.7L95.4 24.7L95.4 24.7L95.4 20.6L97.4 20.6L97.4 31.5L95.5 31.5L95.5 30.2L95.4 30.2Q95.2 30.5 94.9 30.8Q94.7 31.2 94.2 31.4Q93.7 31.6 93.0 31.6ZM93.5 30.1L93.5 30.1Q94.2 30.1 94.6 29.7Q95.0 29.4 95.3 28.8Q95.5 28.2 95.5 27.4L95.5 27.4Q95.5 26.6 95.3 26.0Q95.0 25.4 94.6 25.1Q94.2 24.8 93.5 24.8L93.5 24.8Q92.9 24.8 92.5 25.1Q92.0 25.5 91.8 26.1Q91.6 26.7 91.6 27.4L91.6 27.4Q91.6 28.2 91.8 28.8Q92.0 29.4 92.5 29.7Q92.9 30.1 93.5 30.1ZM99.5 20.6L101.4 20.6L101.4 31.5L99.5 31.5L99.5 20.6ZM105.4 26.7L105.4 26.7L105.4 31.5L103.5 31.5L103.5 23.3L105.3 23.3L105.3 24.9Q105.7 24.2 106.2 23.7L106.2 23.7Q106.9 23.2 107.9 23.2L107.9 23.2Q108.7 23.2 109.3 23.6Q110.0 23.9 110.3 24.6Q110.7 25.3 110.7 26.3L110.7 26.3L110.7 31.5L108.8 31.5L108.8 26.6Q108.8 25.8 108.3 25.3Q107.9 24.8 107.2 24.8L107.2 24.8Q106.7 24.8 106.3 25.0Q105.9 25.3 105.6 25.7Q105.4 26.1 105.4 26.7Z"/></svg>
