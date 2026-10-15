@@ -1,0 +1,489 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #E85D2A; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; }
+</style>
+<canvas id="c" width="2560" height="1440"></canvas>
+<script type="module">
+const W = 1920, H = 1080, DUR = 10;
+const q = new URLSearchParams(location.search);
+const PW = Number(q.get('w')) || 2560;
+const PH = Number(q.get('h')) || 1440;
+const canvas = document.getElementById('c');
+canvas.width = PW;
+canvas.height = PH;
+const g = canvas.getContext('2d');
+
+const fontDefs = [
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-500.woff2', { weight: '500', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-600.woff2', { weight: '600', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-700.woff2', { weight: '700', style: 'normal' }],
+  ['EditorialMono', '../../../../../../shared/fonts/DejaVuSansMono-Bold.ttf', { weight: '700', style: 'normal' }],
+];
+await Promise.all(fontDefs.map(async ([name, url, desc]) => {
+  try {
+    const ff = new FontFace(name, `url(${url})`, desc);
+    await ff.load();
+    document.fonts.add(ff);
+  } catch (e) {}
+}));
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, u) => a + (b - a) * u;
+const easeOut = (u) => 1 - Math.pow(1 - clamp(u), 3);
+
+function rrect(x, y, w, h, r) {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  g.beginPath();
+  g.moveTo(x + rr, y);
+  g.arcTo(x + w, y, x + w, y + h, rr);
+  g.arcTo(x + w, y + h, x, y + h, rr);
+  g.arcTo(x, y + h, x, y, rr);
+  g.arcTo(x, y, x + w, y, rr);
+  g.closePath();
+}
+
+function drawScooterIcon(cx, cy, angle, scale = 1) {
+  g.save();
+  g.translate(cx, cy);
+  g.rotate(angle);
+  g.scale(scale, scale);
+
+  // Basic scooter circle badge
+  g.fillStyle = '#E85D2A';
+  g.beginPath();
+  g.arc(0, 0, 28, 0, Math.PI * 2);
+  g.fill();
+  g.lineWidth = 4;
+  g.strokeStyle = '#FFFFFF';
+  g.stroke();
+
+  // Simple flat scooter silhouette inside
+  g.strokeStyle = '#FFFFFF';
+  g.fillStyle = '#FFFFFF';
+  g.lineWidth = 3.5;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.arc(-10, 8, 5.5, 0, Math.PI * 2);
+  g.arc(11, 8, 5.5, 0, Math.PI * 2);
+  g.stroke();
+
+  g.beginPath();
+  g.moveTo(-10, 8);
+  g.lineTo(-2, -4);
+  g.lineTo(6, 6);
+  g.lineTo(11, 8);
+  g.moveTo(5, 6);
+  g.lineTo(9, -9);
+  g.lineTo(4, -9);
+  g.stroke();
+
+  // Delivery box on back
+  rrect(-16, -10, 11, 10, 2);
+  g.fill();
+
+  g.restore();
+}
+
+function drawPin(x, y, color, label, subLabel, iconType) {
+  g.save();
+  g.translate(x, y);
+
+  // Pin shadow
+  g.fillStyle = 'rgba(0,0,0,0.18)';
+  g.beginPath();
+  g.ellipse(0, 4, 18, 7, 0, 0, Math.PI * 2);
+  g.fill();
+
+  // Teardrop pin
+  g.fillStyle = color;
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.bezierCurveTo(-22, -20, -26, -54, 0, -54);
+  g.bezierCurveTo(26, -54, 22, -20, 0, 0);
+  g.closePath();
+  g.fill();
+  g.lineWidth = 3;
+  g.strokeStyle = '#FFFFFF';
+  g.stroke();
+
+  g.fillStyle = '#FFFFFF';
+  g.beginPath();
+  g.arc(0, -32, 10, 0, Math.PI * 2);
+  g.fill();
+
+  // Label pill above pin
+  g.font = '700 22px EditorialSans';
+  const tw = Math.max(g.measureText(label).width, g.measureText(subLabel).width) + 40;
+  rrect(-tw / 2, -120, tw, 58, 12);
+  g.fillStyle = '#FFFFFF';
+  g.fill();
+  g.lineWidth = 2.5;
+  g.strokeStyle = '#CBD5E1';
+  g.stroke();
+
+  g.fillStyle = '#0F172A';
+  g.textAlign = 'center';
+  g.fillText(label, 0, -93);
+  g.font = '600 17px EditorialSans';
+  g.fillStyle = '#475569';
+  g.fillText(subLabel, 0, -71);
+
+  g.restore();
+}
+
+// Scene 1 [0.0 - 3.2s]: Flat orange background (#E85D2A) + centered phone mockup
+function drawScene1(t) {
+  g.fillStyle = '#E85D2A';
+  g.fillRect(0, 0, W, H);
+
+  // Generic corner frame border & label (typical raw LLM default before CLAUDE.md)
+  g.strokeStyle = 'rgba(255,255,255,0.42)';
+  g.lineWidth = 3;
+  g.strokeRect(36, 36, W - 72, H - 72);
+  g.font = '700 24px EditorialMono';
+  g.fillStyle = '#FFFFFF';
+  g.textAlign = 'left';
+  g.fillText('DOMI-APP // ESTADO: CONFIRMADO', 64, 82);
+
+  const pIn = easeOut(clamp(t / 0.55));
+  const pOut = t > 2.85 ? clamp(1 - (t - 2.85) / 0.35) : 1;
+  const sc = (0.88 + 0.12 * pIn) * (0.95 + 0.05 * pOut);
+
+  g.save();
+  g.globalAlpha = pIn * pOut;
+  g.translate(W / 2, H / 2 + 12 + (1 - pIn) * 50);
+  g.scale(sc, sc);
+
+  // Centered phone mockup (larger for crisp readability inside monitor frame)
+  const pw = 580, ph = 880;
+  rrect(-pw / 2, -ph / 2, pw, ph, 46);
+  g.fillStyle = '#1E1E24';
+  g.fill();
+  g.lineWidth = 7;
+  g.strokeStyle = '#383842';
+  g.stroke();
+
+  // Phone screen
+  const sx = -pw / 2 + 18, sy = -ph / 2 + 22, sw = pw - 36, sh = ph - 44;
+  rrect(sx, sy, sw, sh, 34);
+  g.fillStyle = '#FFFFFF';
+  g.fill();
+
+  // Notch
+  rrect(-72, sy + 12, 144, 24, 12);
+  g.fillStyle = '#1E1E24';
+  g.fill();
+
+  // Top orange header inside phone
+  g.save();
+  rrect(sx, sy, sw, 155, 34);
+  g.clip();
+  g.fillStyle = '#FFF3ED';
+  g.fillRect(sx, sy, sw, 155);
+  g.restore();
+
+  // Green check circle
+  const checkPop = easeOut(clamp((t - 0.3) / 0.45));
+  g.save();
+  g.translate(0, -195);
+  g.scale(checkPop, checkPop);
+  g.fillStyle = '#22C55E';
+  g.beginPath();
+  g.arc(0, 0, 64, 0, Math.PI * 2);
+  g.fill();
+
+  g.strokeStyle = '#FFFFFF';
+  g.lineWidth = 9;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.beginPath();
+  g.moveTo(-26, 2);
+  g.lineTo(-6, 22);
+  g.lineTo(28, -18);
+  g.stroke();
+  g.restore();
+
+  // Text: ¡Pedido confirmado! · Burger del Parque
+  g.textAlign = 'center';
+  g.fillStyle = '#0F172A';
+  g.font = '700 38px EditorialSans';
+  g.fillText('¡Pedido confirmado!', 0, -82);
+
+  g.fillStyle = '#E85D2A';
+  g.font = '700 29px EditorialSans';
+  g.fillText('Burger del Parque', 0, -38);
+
+  g.fillStyle = '#374151';
+  g.font = '600 22px EditorialSans';
+  g.fillText('Orden #4829 · Tiempo estimado: 15 min', 0, 4);
+
+  // Order summary box inside phone
+  rrect(-sw / 2 + 28, 38, sw - 56, 195, 18);
+  g.fillStyle = '#F8FAFC';
+  g.fill();
+  g.lineWidth = 2;
+  g.strokeStyle = '#CBD5E1';
+  g.stroke();
+
+  g.textAlign = 'left';
+  g.font = '600 24px EditorialSans';
+  g.fillStyle = '#0F172A';
+  g.fillText('1× Doble Bacon Cheese', -sw / 2 + 52, 90);
+  g.fillText('1× Papas Crinkle + Gaseosa', -sw / 2 + 52, 136);
+  g.font = '700 26px EditorialSans';
+  g.fillStyle = '#E85D2A';
+  g.fillText('Total pagado: $38.900', -sw / 2 + 52, 198);
+
+  // Progress bar at bottom of phone
+  const barW = sw - 56;
+  rrect(-barW / 2, 272, barW, 20, 10);
+  g.fillStyle = '#E2E8F0';
+  g.fill();
+  const prog = clamp((t - 0.5) / 2.3);
+  rrect(-barW / 2, 272, barW * prog, 20, 10);
+  g.fillStyle = '#22C55E';
+  g.fill();
+
+  g.textAlign = 'center';
+  g.font = '700 22px EditorialSans';
+  g.fillStyle = '#1E293B';
+  g.fillText('Asignando repartidor cercano...', 0, 334);
+
+  g.restore();
+}
+
+// Scene 2 [3.2 - 7.8s]: Basic flat street grid map + orange path + scooter + bottom-left white countdown card (15 min -> 0 min)
+function drawScene2(t) {
+  const dt = t - 3.2;
+  const dur2 = 4.6; // 3.2 -> 7.8
+  const u = clamp(dt / dur2);
+
+  // Flat map background
+  g.fillStyle = '#E5E7EB';
+  g.fillRect(0, 0, W, H);
+
+  // Flat city blocks & parks
+  const blocks = [
+    [80, 70, 380, 220, '#D8DCE3'],
+    [510, 70, 440, 220, '#D1FAE5'], // flat green park
+    [1000, 70, 410, 220, '#D8DCE3'],
+    [1460, 70, 380, 220, '#D8DCE3'],
+    [80, 340, 380, 310, '#D8DCE3'],
+    [510, 340, 440, 310, '#D8DCE3'],
+    [1000, 340, 410, 310, '#DBEAFE'], // flat water/plaza
+    [1460, 340, 380, 310, '#D8DCE3'],
+    [80, 700, 380, 300, '#D8DCE3'],
+    [510, 700, 440, 300, '#D8DCE3'],
+    [1000, 700, 410, 300, '#D1FAE5'],
+    [1460, 700, 380, 300, '#D8DCE3'],
+  ];
+  for (const [bx, by, bw, bh, col] of blocks) {
+    rrect(bx, by, bw, bh, 12);
+    g.fillStyle = col;
+    g.fill();
+  }
+
+  // White roads grid lines
+  g.strokeStyle = '#FFFFFF';
+  g.lineWidth = 28;
+  g.beginPath();
+  for (const x of [485, 975, 1435]) {
+    g.moveTo(x, 0);
+    g.lineTo(x, H);
+  }
+  for (const y of [315, 675]) {
+    g.moveTo(0, y);
+    g.lineTo(W, y);
+  }
+  g.stroke();
+
+  // Dashed lane dividers
+  g.strokeStyle = '#CBD5E1';
+  g.lineWidth = 2;
+  g.setLineDash([14, 14]);
+  g.beginPath();
+  for (const x of [485, 975, 1435]) {
+    g.moveTo(x, 0);
+    g.lineTo(x, H);
+  }
+  for (const y of [315, 675]) {
+    g.moveTo(0, y);
+    g.lineTo(W, y);
+  }
+  g.stroke();
+  g.setLineDash([]);
+
+  // Route waypoints along the grid from Restaurant (485, 675) -> (485, 315) -> (975, 315) -> (1435, 315) -> Tu Casa (1435, 210)
+  const pts = [
+    [485, 675],
+    [485, 315],
+    [975, 315],
+    [1435, 315],
+    [1435, 210],
+  ];
+  const segLens = [];
+  let totalLen = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const d = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+    segLens.push(d);
+    totalLen += d;
+  }
+
+  // Full route background line (light orange)
+  g.strokeStyle = 'rgba(232, 93, 42, 0.28)';
+  g.lineWidth = 14;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.beginPath();
+  g.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+  g.stroke();
+
+  // Active orange path line up to current distance
+  const targetDist = u * totalLen;
+  let acc = 0;
+  let sx = pts[0][0], sy = pts[0][1], sAngle = 0;
+  g.strokeStyle = '#E85D2A';
+  g.lineWidth = 12;
+  g.beginPath();
+  g.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 0; i < segLens.length; i++) {
+    const len = segLens[i];
+    const [x0, y0] = pts[i];
+    const [x1, y1] = pts[i + 1];
+    if (acc + len <= targetDist) {
+      g.lineTo(x1, y1);
+      sx = x1; sy = y1;
+      sAngle = Math.atan2(y1 - y0, x1 - x0);
+      acc += len;
+    } else {
+      const rem = targetDist - acc;
+      const f = clamp(rem / len);
+      sx = lerp(x0, x1, f);
+      sy = lerp(y0, y1, f);
+      sAngle = Math.atan2(y1 - y0, x1 - x0);
+      g.lineTo(sx, sy);
+      break;
+    }
+  }
+  g.stroke();
+
+  // Pins: Restaurant & House
+  drawPin(pts[0][0], pts[0][1], '#E85D2A', 'Burger del Parque', 'Restaurante · Salida', 'rest');
+  drawPin(pts[4][0], pts[4][1], '#22C55E', 'Tu Casa', 'Calle 85 #14-20', 'home');
+
+  // Scooter icon moving along the line
+  drawScooterIcon(sx, sy, sAngle * 0.15, 1.35);
+
+  // Top-right basic status pill
+  rrect(W - 470, 48, 410, 74, 14);
+  g.fillStyle = '#FFFFFF';
+  g.fill();
+  g.lineWidth = 2;
+  g.strokeStyle = '#E2E8F0';
+  g.stroke();
+  g.fillStyle = '#E85D2A';
+  g.beginPath();
+  g.arc(W - 432, 85, 10, 0, Math.PI * 2);
+  g.fill();
+  g.textAlign = 'left';
+  g.font = '700 20px EditorialSans';
+  g.fillStyle = '#111827';
+  g.fillText('En camino · Moto en ruta', W - 406, 80);
+  g.font = '500 16px EditorialSans';
+  g.fillStyle = '#64748B';
+  g.fillText('Burger del Parque → Tu Casa', W - 406, 104);
+
+  // Bottom-left white card with countdown timer dropping from 15 min to 0 min
+  const cx = 64, cy = H - 250, cw = 520, ch = 190;
+  rrect(cx, cy, cw, ch, 18);
+  g.fillStyle = '#FFFFFF';
+  g.fill();
+  g.lineWidth = 3;
+  g.strokeStyle = '#E85D2A';
+  g.stroke();
+
+  const mins = Math.max(0, Math.ceil(15 * (1 - u)));
+  g.textAlign = 'left';
+  g.font = '700 18px EditorialMono';
+  g.fillStyle = '#E85D2A';
+  g.fillText('TIEMPO ESTIMADO DE LLEGADA', cx + 32, cy + 44);
+
+  g.font = '700 76px EditorialMono';
+  g.fillStyle = '#111827';
+  g.fillText(`${String(mins).padStart(2, '0')} min`, cx + 32, cy + 126);
+
+  // Progress bar inside bottom-left card
+  rrect(cx + 32, cy + 148, cw - 64, 16, 8);
+  g.fillStyle = '#F1F5F9';
+  g.fill();
+  rrect(cx + 32, cy + 148, (cw - 64) * u, 16, 8);
+  g.fillStyle = '#E85D2A';
+  g.fill();
+}
+
+// Scene 3 [7.8 - 10.0s]: Green badge "¡Llegó tu pedido! · 20:42"
+function drawScene3(t) {
+  const dt = t - 7.8;
+  const p = easeOut(clamp(dt / 0.45));
+
+  g.fillStyle = '#E85D2A';
+  g.fillRect(0, 0, W, H);
+
+  g.strokeStyle = 'rgba(255,255,255,0.28)';
+  g.lineWidth = 2;
+  g.strokeRect(36, 36, W - 72, H - 72);
+
+  g.save();
+  g.translate(W / 2, H / 2 + (1 - p) * 40);
+  g.scale(0.9 + 0.1 * p, 0.9 + 0.1 * p);
+  g.globalAlpha = clamp(dt / 0.25);
+
+  const bw = 880, bh = 380;
+  rrect(-bw / 2, -bh / 2, bw, bh, 28);
+  g.fillStyle = '#FFFFFF';
+  g.fill();
+  g.lineWidth = 5;
+  g.strokeStyle = '#22C55E';
+  g.stroke();
+
+  // Green badge pill at top
+  rrect(-260, -135, 520, 64, 32);
+  g.fillStyle = '#22C55E';
+  g.fill();
+  g.textAlign = 'center';
+  g.font = '700 28px EditorialSans';
+  g.fillStyle = '#FFFFFF';
+  g.fillText('✓  ¡Llegó tu pedido! · 20:42', 0, -93);
+
+  // 0 min counter
+  g.font = '700 84px EditorialMono';
+  g.fillStyle = '#111827';
+  g.fillText('00 min', 0, 22);
+
+  g.font = '600 26px EditorialSans';
+  g.fillStyle = '#4B5563';
+  g.fillText('Burger del Parque entregado en tu puerta', 0, 88);
+
+  g.font = '500 20px EditorialSans';
+  g.fillStyle = '#E85D2A';
+  g.fillText('Gracias por pedir con DomiApp', 0, 132);
+
+  g.restore();
+}
+
+window.seek = (t) => {
+  g.setTransform(PW / W, 0, 0, PH / H, 0, 0);
+  const tc = clamp(t, 0, DUR);
+  if (tc < 3.2) {
+    drawScene1(tc);
+  } else if (tc < 7.8) {
+    drawScene2(tc);
+  } else {
+    drawScene3(tc);
+  }
+};
+window.seek(0);
+</script>

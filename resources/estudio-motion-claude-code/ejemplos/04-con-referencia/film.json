@@ -1,0 +1,14 @@
+{
+  "titulo": "Demo 04 · Notion Launch con Referencia (15s)",
+  "dur": 15,
+  "fps": 30,
+  "sub": 2,
+  "poster": 5.5,
+  "formatos": [
+    {
+      "nombre": "16x9",
+      "w": 1920,
+      "h": 1080
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "titulo": "Demo 01 · Delivery en Crudo (Sin CLAUDE.md)",
+  "dur": 10,
+  "fps": 30,
+  "sub": 2,
+  "poster": 5.2,
+  "formatos": [
+    {
+      "nombre": "16x9",
+      "w": 1920,
+      "h": 1080
+    }
+  ]
+}

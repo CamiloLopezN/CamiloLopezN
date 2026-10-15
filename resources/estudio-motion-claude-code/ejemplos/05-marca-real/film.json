@@ -1,0 +1,14 @@
+{
+  "titulo": "Demo 05 · Lanzamiento Marca Real en 5 Actos con Playwright (20s)",
+  "dur": 20,
+  "fps": 30,
+  "sub": 2,
+  "poster": 6.5,
+  "formatos": [
+    {
+      "nombre": "16x9",
+      "w": 1920,
+      "h": 1080
+    }
+  ]
+}

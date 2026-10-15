@@ -1,0 +1,39 @@
+[
+  { "t": 0.15, "type": "thump", "gain": 0.55 },
+  { "t": 0.55, "type": "click", "gain": 0.45 },
+  { "t": 1.25, "type": "whoosh", "gain": 0.75 },
+  { "t": 1.28, "type": "thump", "gain": 0.70 },
+  { "t": 1.45, "type": "pop", "gain": 0.45 },
+  { "t": 1.65, "type": "pop", "gain": 0.40 },
+
+  { "t": 2.50, "type": "whoosh", "gain": 0.60 },
+  { "t": 2.90, "type": "boing", "gain": 0.65 },
+  { "t": 3.55, "type": "boing", "gain": 0.65 },
+  { "t": 4.20, "type": "boing", "gain": 0.65 },
+  { "t": 4.75, "type": "pop", "gain": 0.50 },
+
+  { "t": 5.00, "type": "thump", "gain": 0.65 },
+  { "t": 5.15, "type": "whoosh", "gain": 0.55 },
+  { "t": 5.45, "type": "click", "gain": 0.50 },
+  { "t": 6.00, "type": "whoosh", "gain": 0.60 },
+  { "t": 6.45, "type": "chime", "gain": 0.45 },
+  { "t": 7.10, "type": "pop", "gain": 0.50 },
+
+  { "t": 7.50, "type": "thump", "gain": 0.65 },
+  { "t": 7.98, "type": "tick", "gain": 0.45 },
+  { "t": 8.46, "type": "tick", "gain": 0.45 },
+  { "t": 8.95, "type": "tick", "gain": 0.45 },
+  { "t": 9.43, "type": "tick", "gain": 0.45 },
+  { "t": 9.91, "type": "pop", "gain": 0.50 },
+
+  { "t": 10.50, "type": "whoosh", "gain": 0.60 },
+  { "t": 10.95, "type": "click", "gain": 0.50 },
+  { "t": 11.45, "type": "boing", "gain": 0.50 },
+  { "t": 12.10, "type": "correct", "gain": 0.48 },
+
+  { "t": 13.00, "type": "whoosh", "gain": 0.65 },
+  { "t": 13.20, "type": "pop", "gain": 0.45 },
+  { "t": 13.40, "type": "pop", "gain": 0.45 },
+  { "t": 13.85, "type": "thump", "gain": 0.65 },
+  { "t": 13.90, "type": "chime", "gain": 0.65 }
+]

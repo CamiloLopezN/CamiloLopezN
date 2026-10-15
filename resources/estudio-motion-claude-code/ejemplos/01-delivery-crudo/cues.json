@@ -1,0 +1,10 @@
+[
+  { "t": 0.25, "type": "pop", "gain": 0.40 },
+  { "t": 0.85, "type": "correct", "gain": 0.35 },
+  { "t": 3.20, "type": "whoosh", "gain": 0.38 },
+  { "t": 4.20, "type": "tick", "gain": 0.28 },
+  { "t": 5.20, "type": "tick", "gain": 0.28 },
+  { "t": 6.20, "type": "tick", "gain": 0.28 },
+  { "t": 7.20, "type": "tick", "gain": 0.28 },
+  { "t": 7.80, "type": "chime", "gain": 0.45 }
+]

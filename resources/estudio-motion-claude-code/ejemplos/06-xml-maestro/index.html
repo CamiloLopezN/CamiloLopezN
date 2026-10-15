@@ -1,0 +1,896 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #EAE6DF; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; }
+</style>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script type="module">
+const canvas = document.getElementById('c');
+const g = canvas.getContext('2d');
+
+const fontDefs = [
+  ['EditorialSerif', '../../../../../../shared/fonts/NotoSerifDisplay-Regular.ttf', { weight: '400', style: 'normal' }],
+  ['EditorialSerif', '../../../../../../shared/fonts/NotoSerifDisplay-Italic.ttf', { weight: '400', style: 'italic' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-500.woff2', { weight: '500', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-600.woff2', { weight: '600', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-700.woff2', { weight: '700', style: 'normal' }],
+  ['EditorialMono', '../../../../../../shared/fonts/DejaVuSansMono.ttf', { weight: '400', style: 'normal' }],
+  ['EditorialMono', '../../../../../../shared/fonts/DejaVuSansMono-Bold.ttf', { weight: '700', style: 'normal' }],
+];
+await Promise.all(fontDefs.map(async ([name, url, desc]) => {
+  try {
+    const ff = new FontFace(name, `url(${url})`, desc);
+    await ff.load();
+    document.fonts.add(ff);
+  } catch (e) {}
+}));
+
+const DUR = 16.0;
+const params = new URLSearchParams(location.search);
+const PAGE_TITLE = params.get('title') || window.__SURGICAL_TITLE || 'Plan de lanzamiento';
+
+const P = {
+  bg: '#EAE6DF',
+  grid: '#DDD7CD',
+  ink: '#181715',
+  inkSoft: '#524E48',
+  muted: '#857F76',
+  card: '#FFFFFF',
+  border: '#E2DDD5',
+  accent: '#0075DE',
+  accentSoft: '#E3F2FD',
+  todoBg: '#F3F0FA',
+  todoFg: '#6E4BC4',
+  progBg: '#FDF3DC',
+  progFg: '#B87814',
+  doneBg: '#E6F6EC',
+  doneFg: '#237B43',
+};
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, u) => a + (b - a) * u;
+const easeOutCubic = (u) => 1 - Math.pow(1 - clamp(u), 3);
+
+// Closed-form damped harmonic oscillator (minimal overshoot)
+function spring(dt, k = 190, c = 24) {
+  if (dt <= 0) return 0;
+  const w0 = Math.sqrt(k);
+  const zeta = c / (2 * w0);
+  if (zeta < 1) {
+    const wd = w0 * Math.sqrt(1 - zeta * zeta);
+    return 1 - Math.exp(-zeta * w0 * dt) * (Math.cos(wd * dt) + (zeta * w0 / wd) * Math.sin(wd * dt));
+  }
+  return 1 - (1 + w0 * dt) * Math.exp(-w0 * dt);
+}
+
+// Closed-form spring sum: a single value with multiple targets is the sum of one spring per change
+function track(t, keyframes, k = 190, c = 24) {
+  let val = keyframes[0][1];
+  for (let i = 1; i < keyframes.length; i++) {
+    const [t0, target, ki, ci] = keyframes[i];
+    const prev = keyframes[i - 1][1];
+    if (t > t0) val += (target - prev) * spring(t - t0, ki || k, ci || c);
+  }
+  return val;
+}
+
+function trackColor(t, keyframes, k = 200, c = 25) {
+  const r = Math.round(clamp(track(t, keyframes.map(([t0, rgb]) => [t0, rgb[0]]), k, c), 0, 255));
+  const gr = Math.round(clamp(track(t, keyframes.map(([t0, rgb]) => [t0, rgb[1]]), k, c), 0, 255));
+  const b = Math.round(clamp(track(t, keyframes.map(([t0, rgb]) => [t0, rgb[2]]), k, c), 0, 255));
+  return `rgb(${r}, ${gr}, ${b})`;
+}
+
+function rrect(x, y, w, h, r) {
+  const rr = Math.max(0, Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2));
+  g.beginPath();
+  g.moveTo(x + rr, y);
+  g.arcTo(x + w, y, x + w, y + h, rr);
+  g.arcTo(x + w, y + h, x, y + h, rr);
+  g.arcTo(x, y + h, x, y, rr);
+  g.arcTo(x, y, x + w, y, rr);
+  g.closePath();
+}
+
+function drawNotionLogo(cx, cy, size, fg = P.ink, bg = '#FFFFFF') {
+  const s = size;
+  const x = cx - s / 2, y = cy - s / 2;
+  g.save();
+  rrect(x, y, s, s, s * 0.22);
+  g.fillStyle = bg;
+  g.fill();
+  g.lineWidth = Math.max(1.8, s * 0.055);
+  g.strokeStyle = fg;
+  g.stroke();
+
+  // Stylized Serif 'N' inside cube
+  g.fillStyle = fg;
+  g.font = `700 ${Math.round(s * 0.60)}px EditorialSerif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('N', cx, cy + s * 0.03);
+  g.restore();
+}
+
+function drawBadge(x, y, text, bg, fg, dotColor) {
+  g.save();
+  g.font = '600 15px EditorialSans';
+  const tw = g.measureText(text).width;
+  const bw = tw + (dotColor ? 34 : 22);
+  const bh = 28;
+  rrect(x, y, bw, bh, 8);
+  g.fillStyle = bg;
+  g.fill();
+  if (dotColor) {
+    g.fillStyle = dotColor;
+    g.beginPath();
+    g.arc(x + 13, y + bh / 2, 4.5, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.fillStyle = fg;
+  g.textAlign = 'left';
+  g.textBaseline = 'middle';
+  g.fillText(text, x + (dotColor ? 24 : 11), y + bh / 2 + 1);
+  g.restore();
+  return bw;
+}
+
+function drawKanbanCard(x, y, w, h, title, tag, tagBg, tagFg, avatar, opts = {}) {
+  const { elevated = 0, rot = 0, done = false, activeBorder = false } = opts;
+  g.save();
+  const cx = x + w / 2, cy = y + h / 2;
+  g.translate(cx, cy);
+  if (rot) g.rotate(rot);
+  const sc = 1 + elevated * 0.045;
+  g.scale(sc, sc);
+
+  g.save();
+  g.shadowColor = `rgba(24, 23, 21, ${0.05 + elevated * 0.16})`;
+  g.shadowBlur = 14 + elevated * 28;
+  g.shadowOffsetY = 4 + elevated * 14;
+  rrect(-w / 2, -h / 2, w, h, 14);
+  g.fillStyle = '#FFFFFF';
+  g.fill();
+  g.restore();
+
+  rrect(-w / 2, -h / 2, w, h, 14);
+  g.lineWidth = activeBorder || elevated > 0.1 ? 2 : 1.2;
+  g.strokeStyle = activeBorder || elevated > 0.1 ? P.accent : P.border;
+  g.stroke();
+
+  // Title
+  g.font = '600 18px EditorialSans';
+  g.fillStyle = P.ink;
+  g.textAlign = 'left';
+  g.textBaseline = 'top';
+  g.fillText(title, -w / 2 + 18, -h / 2 + 16);
+
+  // Tag pill
+  drawBadge(-w / 2 + 18, h / 2 - 40, tag, done ? P.doneBg : tagBg, done ? P.doneFg : tagFg, done ? P.doneFg : null);
+
+  // Avatar circle
+  const ax = w / 2 - 28, ay = h / 2 - 26;
+  g.fillStyle = '#F0ECE3';
+  g.beginPath();
+  g.arc(ax, ay, 13, 0, Math.PI * 2);
+  g.fill();
+  g.font = '700 11px EditorialSans';
+  g.fillStyle = P.inkSoft;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(avatar, ax, ay + 1);
+
+  g.restore();
+}
+
+function drawCursor(t, cx, cy) {
+  // Single continuous cursor path across all 8 bars
+  const xKey = [
+    [0.00, cx + 140],
+    [0.25, cx + 8],
+    [0.65, cx - 140],
+    [2.30, cx - 105],
+    [3.10, cx - 370],
+    [5.20, cx - 360],
+    [5.65, cx + 10],
+    [7.90, cx + 25],
+    [8.70, cx - 228],
+    [9.70, cx - 238],
+    [11.30, cx + 120],
+    [12.35, cx + 18],
+    [13.55, cx + 350],
+  ];
+  const yKey = [
+    [0.00, cy + 120],
+    [0.25, cy + 8],
+    [0.65, cy - 82],
+    [2.30, cy - 232],
+    [3.10, cy - 42],
+    [5.20, cy - 42],
+    [5.65, cy - 38],
+    [7.90, cy - 38],
+    [8.70, cy + 48],
+    [9.70, cy + 56],
+    [11.30, cy + 8],
+    [12.35, cy + 6],
+    [13.55, cy + 185],
+  ];
+
+  const x = track(t, xKey, 175, 23);
+  const y = track(t, yKey, 175, 23);
+
+  // Click timestamps on the beat grid
+  const clicks = [0.45, 2.55, 5.50, 8.10, 10.00, 12.85];
+  let press = 0;
+  for (const tc of clicks) {
+    const dt = t - tc;
+    if (dt >= 0 && dt < 0.35) {
+      press = Math.max(press, Math.sin((dt / 0.35) * Math.PI) * Math.exp(-dt * 4));
+    }
+    // Click ripple ring
+    if (dt >= 0 && dt < 0.45) {
+      const rp = easeOutCubic(dt / 0.45);
+      g.save();
+      g.strokeStyle = P.accent;
+      g.globalAlpha = (1 - rp) * 0.55;
+      g.lineWidth = 2.5;
+      g.beginPath();
+      g.arc(x, y, 8 + rp * 34, 0, Math.PI * 2);
+      g.stroke();
+      g.restore();
+    }
+  }
+
+  // Drag hold state during Compás 4 (5.50 - 7.25s)
+  const dragging = t >= 5.50 && t <= 7.25 ? clamp(Math.min((t - 5.50) / 0.12, (7.25 - t) / 0.12)) : 0;
+  const sc = 1 - 0.14 * Math.max(press, dragging * 0.6);
+
+  g.save();
+  g.translate(x, y);
+  g.scale(sc, sc);
+  g.shadowColor = 'rgba(24, 23, 21, 0.28)';
+  g.shadowBlur = 12;
+  g.shadowOffsetY = 4;
+
+  // Crisp pointer arrow
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.lineTo(0, 26);
+  g.lineTo(7.2, 20.2);
+  g.lineTo(12.5, 31);
+  g.lineTo(17.2, 28.8);
+  g.lineTo(11.8, 18.0);
+  g.lineTo(20.5, 18.0);
+  g.closePath();
+  g.fillStyle = P.ink;
+  g.fill();
+  g.lineWidth = 2.2;
+  g.strokeStyle = '#FFFFFF';
+  g.stroke();
+  g.restore();
+}
+
+function drawFrame(t) {
+  const vw = window.innerWidth || 1920;
+  const vh = window.innerHeight || 1080;
+  if (canvas.width !== vw || canvas.height !== vh) {
+    canvas.width = vw;
+    canvas.height = vh;
+  }
+  const W = canvas.width, H = canvas.height;
+  const isPortrait = H > W;
+
+  // 1. Warm neutral background (#EAE6DF) + subtle architectural dot/line grid
+  g.fillStyle = P.bg;
+  g.fillRect(0, 0, W, H);
+
+  const cell = 56;
+  const ox = (t * 6) % cell;
+  const oy = (t * 4) % cell;
+  g.save();
+  g.strokeStyle = P.grid;
+  g.lineWidth = 1;
+  g.beginPath();
+  for (let x = -cell + ox; x <= W + cell; x += cell) {
+    g.moveTo(x, 0);
+    g.lineTo(x, H);
+  }
+  for (let y = -cell + oy; y <= H + cell; y += cell) {
+    g.moveTo(0, y);
+    g.lineTo(W, y);
+  }
+  g.stroke();
+  g.restore();
+
+  // Radial vignette
+  const vg = g.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, Math.max(W, H) * 0.65);
+  vg.addColorStop(0, 'rgba(234, 230, 223, 0)');
+  vg.addColorStop(1, 'rgba(202, 195, 183, 0.38)');
+  g.fillStyle = vg;
+  g.fillRect(0, 0, W, H);
+
+  // Scale factor for portrait 9:16 so the exact same timeline fits inside safe zone (x 60..1020)
+  const layoutScale = isPortrait ? 0.78 : 1.0;
+  const cx = W / 2;
+  const cy = H / 2;
+
+  g.save();
+  g.translate(cx, cy);
+  g.scale(layoutScale, layoutScale);
+  g.translate(-cx, -cy);
+
+  // ==========================================================================
+  // THE SINGLE CONTAINER THAT NEVER CUTS (8 bars at 120 BPM)
+  // ==========================================================================
+  const wKey = [
+    [0.00, 88],
+    [0.45, 820, 185, 23],
+    [2.20, 1180, 180, 23],
+    [8.50, 680, 190, 24],
+    [11.20, 780, 200, 24],
+    [12.15, 260, 210, 24],
+    [13.40, 820, 185, 23],
+  ];
+  const hKey = [
+    [0.00, 88],
+    [0.45, 520, 185, 23],
+    [2.20, 640, 180, 23],
+    [8.50, 420, 190, 24],
+    [11.20, 220, 200, 24],
+    [12.15, 76, 210, 24],
+    [13.40, 270, 185, 23],
+  ];
+  const rKey = [
+    [0.00, 22],
+    [0.45, 20],
+    [2.20, 24],
+    [8.50, 22],
+    [11.20, 24],
+    [12.15, 38],
+    [13.40, 28],
+  ];
+  const fillKey = [
+    [0.00, [255, 255, 255]],
+    [12.15, [0, 117, 222]],
+    [13.40, [255, 255, 255]],
+  ];
+
+  const cw = track(t, wKey);
+  const ch = track(t, hKey);
+  const cr = track(t, rKey);
+  const cFill = trackColor(t, fillKey);
+
+  // Instantaneous morph velocity for subtle internal blur during morph transitions
+  const dw = Math.abs(track(t + 0.016, wKey) - track(t - 0.016, wKey)) / 0.032;
+  const dh = Math.abs(track(t + 0.016, hKey) - track(t - 0.016, hKey)) / 0.032;
+  const morphSpeed = clamp((dw + dh) / 4200, 0, 1);
+
+  // Press squish at t = 12.85s when clicking "Compartir ↗"
+  const shareClickDt = t - 12.85;
+  const shareSquish = shareClickDt > 0 && shareClickDt < 0.35
+    ? 1 - 0.055 * Math.sin((shareClickDt / 0.35) * Math.PI) * Math.exp(-shareClickDt * 5)
+    : 1;
+
+  const x0 = cx - (cw * shareSquish) / 2;
+  const y0 = cy - (ch * shareSquish) / 2;
+  const Wc = cw * shareSquish;
+  const Hc = ch * shareSquish;
+
+  // Container elevation shadow + body
+  g.save();
+  g.shadowColor = 'rgba(24, 23, 21, 0.12)';
+  g.shadowBlur = 42;
+  g.shadowOffsetY = 18;
+  rrect(x0, y0, Wc, Hc, cr);
+  g.fillStyle = cFill;
+  g.fill();
+  g.restore();
+
+  rrect(x0, y0, Wc, Hc, cr);
+  g.lineWidth = 1.5;
+  g.strokeStyle = t > 12.15 && t < 13.45 ? 'rgba(0, 117, 222, 0.4)' : P.border;
+  g.stroke();
+
+  // Clip all internal states to the single morphing container
+  g.save();
+  rrect(x0, y0, Wc, Hc, cr);
+  g.clip();
+  if (morphSpeed > 0.15) {
+    g.filter = `blur(${(morphSpeed * 3.2).toFixed(1)}px)`;
+  }
+
+  // --------------------------------------------------------------------------
+  // STATE 0: Initial Notion Icon (0.00 - 0.52s) — exits before page opens
+  // --------------------------------------------------------------------------
+  if (t < 0.55) {
+    const iconOut = clamp(1 - (t - 0.36) / 0.12);
+    g.save();
+    g.globalAlpha = iconOut;
+    drawNotionLogo(cx, cy, 56, P.ink, '#FFFFFF');
+    g.restore();
+  }
+
+  // --------------------------------------------------------------------------
+  // STATE 1: Blank Page + Title Typing (0.52 - 2.18s)
+  // Exits 100ms before Compás 2 morph (2.06 - 2.18s)
+  // --------------------------------------------------------------------------
+  if (t >= 0.52 && t <= 2.20) {
+    const enterA = clamp((t - 0.56) / 0.16);
+    const exitA = clamp(1 - (t - 2.06) / 0.12);
+    const a1 = enterA * exitA;
+    const ySlide = (1 - spring(t - 0.54, 210, 24)) * 18 - (1 - exitA) * 14;
+
+    g.save();
+    g.globalAlpha = a1;
+    g.translate(0, ySlide);
+
+    // Top Notion breadcrumb bar
+    drawNotionLogo(x0 + 48, y0 + 42, 28, P.ink, '#FFFFFF');
+    g.font = '500 15px EditorialSans';
+    g.fillStyle = P.muted;
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    g.fillText('Espacio de Producto  /  Q4 Lanzamiento', x0 + 74, y0 + 42);
+
+    // Subtle divider
+    g.strokeStyle = '#EFECE6';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(x0 + 32, y0 + 72);
+    g.lineTo(x0 + Wc - 32, y0 + 72);
+    g.stroke();
+
+    // Document icon + Meta
+    drawBadge(x0 + 64, y0 + 108, 'DOCUMENTO DE LANZAMIENTO · IA ACTIVA', P.accentSoft, P.accent, P.accent);
+
+    // Typing title: "Plan de lanzamiento" (or surgical override)
+    const typeProgress = clamp((t - 0.78) / 0.92);
+    const chars = Math.floor(typeProgress * PAGE_TITLE.length);
+    const visibleTitle = PAGE_TITLE.slice(0, chars);
+
+    g.font = '700 48px EditorialSans';
+    g.fillStyle = P.ink;
+    g.textAlign = 'left';
+    g.textBaseline = 'alphabetic';
+    const tx = x0 + 64, ty = y0 + 205;
+    g.fillText(visibleTitle, tx, ty);
+
+    // Blinking text caret in accent blue
+    const tw = g.measureText(visibleTitle).width;
+    if (t < 2.05) {
+      g.fillStyle = P.accent;
+      rrect(tx + tw + 6, ty - 42, 3.5, 48, 2);
+      g.fill();
+    }
+
+    // Skeleton note lines & slash command prompt
+    const lines = [
+      { y: 262, w: 540, t0: 1.15 },
+      { y: 298, w: 420, t0: 1.28 },
+      { y: 334, w: 480, t0: 1.40 },
+    ];
+    lines.forEach((ln) => {
+      const dl = t - ln.t0;
+      if (dl <= 0) return;
+      const lp = easeOutCubic(clamp(dl / 0.28));
+      rrect(x0 + 64, y0 + ln.y, ln.w * lp, 14, 7);
+      g.fillStyle = '#EFECE6';
+      g.fill();
+    });
+
+    if (t > 1.55) {
+      const sp = spring(t - 1.55, 220, 22);
+      g.save();
+      g.globalAlpha = a1 * clamp((t - 1.55) / 0.15);
+      rrect(x0 + 64, y0 + 388 + (1 - sp) * 12, 310, 44, 10);
+      g.fillStyle = '#F7F5F0';
+      g.fill();
+      g.strokeStyle = P.border;
+      g.lineWidth = 1.2;
+      g.stroke();
+      g.font = '500 16px EditorialMono';
+      g.fillStyle = P.accent;
+      g.fillText('/convertir en tablero kanban ↵', x0 + 82, y0 + 415 + (1 - sp) * 12);
+      g.restore();
+    }
+
+    g.restore();
+  }
+
+  // --------------------------------------------------------------------------
+  // STATE 2 & 3: 3-Column Kanban Board + Card Drag (2.32 - 8.48s)
+  // Enters after container starts opening (2.34s), exits 100ms before modal (8.36s)
+  // --------------------------------------------------------------------------
+  if (t >= 2.30 && t <= 8.50) {
+    const enterA = clamp((t - 2.34) / 0.16);
+    const exitA = clamp(1 - (t - 8.36) / 0.12);
+    const a2 = enterA * exitA;
+
+    g.save();
+    g.globalAlpha = a2;
+
+    // Header bar inside Kanban container
+    drawNotionLogo(x0 + 48, y0 + 44, 30, P.ink, '#FFFFFF');
+    g.font = '700 22px EditorialSans';
+    g.fillStyle = P.ink;
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    g.fillText(PAGE_TITLE, x0 + 78, y0 + 44);
+
+    // View Tabs with elastic two-spring indicator (leading edge fast, trailing edge slower)
+    const tabY = y0 + 88;
+    const tabs = [
+      { label: 'Documento', x: x0 + 44, w: 124 },
+      { label: 'Tablero Kanban', x: x0 + 184, w: 164 },
+      { label: 'Cronograma', x: x0 + 364, w: 136 },
+    ];
+
+    // Elastic indicator: leading edge (right) uses fast spring (k=260, c=22), trailing edge (left) uses slower spring (k=135, c=18)
+    const indLeft = track(t, [[2.30, x0 + 44], [2.52, x0 + 184, 135, 18]]);
+    const indRight = track(t, [[2.30, x0 + 44 + 124], [2.52, x0 + 184 + 164, 260, 22]]);
+
+    rrect(indLeft, tabY, Math.max(40, indRight - indLeft), 36, 10);
+    g.fillStyle = P.accentSoft;
+    g.fill();
+
+    // Bottom accent bar under active tab (also two springs!)
+    rrect(indLeft + 10, tabY + 38, Math.max(20, indRight - indLeft - 20), 3, 1.5);
+    g.fillStyle = P.accent;
+    g.fill();
+
+    tabs.forEach((tb, idx) => {
+      const isAct = (t < 2.55 && idx === 0) || (t >= 2.55 && idx === 1);
+      g.font = isAct ? '600 15px EditorialSans' : '500 15px EditorialSans';
+      g.fillStyle = isAct ? P.accent : P.inkSoft;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(tb.label, tb.x + tb.w / 2, tabY + 18);
+    });
+
+    // Divider line under tabs
+    g.strokeStyle = '#EFECE6';
+    g.lineWidth = 1.2;
+    g.beginPath();
+    g.moveTo(x0 + 32, tabY + 42);
+    g.lineTo(x0 + Wc - 32, tabY + 42);
+    g.stroke();
+
+    // 3 Kanban Columns
+    const colW = 344;
+    const colGap = 28;
+    const colsStartX = cx - (colW * 3 + colGap * 2) / 2;
+    const colTopY = y0 + 150;
+    const colH = 456;
+
+    const colDefs = [
+      { title: 'Por hacer', count: t > 6.4 ? '2' : '3', bg: P.todoBg, fg: P.todoFg, tIn: 2.65 },
+      { title: 'En curso', count: t > 6.4 ? '3' : '2', bg: P.progBg, fg: P.progFg, tIn: 2.80 },
+      { title: 'Listo', count: '2', bg: P.doneBg, fg: P.doneFg, tIn: 2.95 },
+    ];
+
+    colDefs.forEach((col, cIdx) => {
+      const dtCol = t - col.tIn;
+      if (dtCol <= 0) return;
+      const pCol = spring(dtCol, 200, 23);
+      const colX = colsStartX + cIdx * (colW + colGap);
+      const colY = colTopY + (1 - pCol) * 28;
+
+      g.save();
+      g.globalAlpha = a2 * clamp(dtCol / 0.18);
+      rrect(colX, colY, colW, colH, 16);
+      g.fillStyle = '#F7F5F0';
+      g.fill();
+
+      // Column badge header
+      const bw = drawBadge(colX + 16, colY + 16, col.title, col.bg, col.fg, col.fg);
+      g.font = '600 14px EditorialMono';
+      g.fillStyle = P.muted;
+      g.textAlign = 'left';
+      g.textBaseline = 'middle';
+      g.fillText(col.count, colX + 26 + bw, colY + 30);
+      g.restore();
+    });
+
+    // Static cards in Column 1 (shift up smoothly when "Escribir el anuncio" leaves at t = 5.8s)
+    const col1Shift = track(t, [[0, 0], [5.85, -124, 170, 22]]);
+    if (t > 2.85) {
+      const p = spring(t - 2.85, 200, 23);
+      drawKanbanCard(colsStartX + 16, colTopY + 60 + 124 + col1Shift + (1 - p) * 24, colW - 32, 108,
+        'Revisar métricas de retención', 'Analítica', '#EEF3FA', '#3B66A8', 'CL');
+    }
+    if (t > 2.98) {
+      const p = spring(t - 2.98, 200, 23);
+      drawKanbanCard(colsStartX + 16, colTopY + 60 + 248 + col1Shift + (1 - p) * 24, colW - 32, 108,
+        'Exportar versión 9:16 Reels', 'Formato', '#F3F0FA', '#6E4BC4', 'MK');
+    }
+
+    // Static cards in Column 2 (shift down smoothly to open slot for dragged card at t = 5.8s)
+    const col2Shift = track(t, [[0, 0], [5.80, 124, 175, 22]]);
+    const col2X = colsStartX + colW + colGap + 16;
+
+    // Dashed drop-target slot in Column 2 while dragging
+    if (t > 5.60 && t < 7.35) {
+      const slotA = clamp(Math.min((t - 5.60) / 0.2, (7.35 - t) / 0.2));
+      g.save();
+      g.globalAlpha = a2 * slotA;
+      rrect(col2X, colTopY + 60, colW - 32, 108, 14);
+      g.fillStyle = 'rgba(0, 117, 222, 0.06)';
+      g.fill();
+      g.setLineDash([7, 6]);
+      g.lineWidth = 2;
+      g.strokeStyle = P.accent;
+      g.stroke();
+      g.restore();
+    }
+
+    if (t > 2.92) {
+      const p = spring(t - 2.92, 200, 23);
+      drawKanbanCard(col2X, colTopY + 60 + col2Shift + (1 - p) * 24, colW - 32, 108,
+        'Renderizar película a 60fps', 'Motor Canvas', P.progBg, P.progFg, 'AL');
+    }
+    if (t > 3.05) {
+      const p = spring(t - 3.05, 200, 23);
+      drawKanbanCard(col2X, colTopY + 60 + 124 + col2Shift + (1 - p) * 24, colW - 32, 108,
+        'Sincronizar música a 120 BPM', 'Audio', P.progBg, P.progFg, 'JS');
+    }
+
+    // Static cards in Column 3 ("Listo")
+    const col3X = colsStartX + (colW + colGap) * 2 + 16;
+    if (t > 3.00) {
+      const p = spring(t - 3.00, 200, 23);
+      drawKanbanCard(col3X, colTopY + 60 + (1 - p) * 24, colW - 32, 108,
+        'Definir reglas en CLAUDE.md', 'Listo', P.doneBg, P.doneFg, 'CL', { done: true });
+    }
+    if (t > 3.12) {
+      const p = spring(t - 3.12, 200, 23);
+      drawKanbanCard(col3X, colTopY + 60 + 124 + (1 - p) * 24, colW - 32, 108,
+        'Extraer activos con Playwright', 'Listo', P.doneBg, P.doneFg, 'AL', { done: true });
+    }
+
+    // HERO DRAGGED CARD: "Escribir el anuncio" (drawn on top with physical rotation inertia)
+    if (t > 2.75) {
+      const pIn = spring(t - 2.75, 200, 23);
+      const cardXKey = [
+        [0.0, colsStartX + 16],
+        [5.65, col2X, 155, 21],
+      ];
+      const cardYKey = [
+        [0.0, colTopY + 60],
+        [5.50, colTopY + 46, 210, 22],
+        [7.20, colTopY + 60, 210, 22],
+      ];
+      const hx = track(t, cardXKey);
+      const hy = track(t, cardYKey) + (1 - pIn) * 24;
+
+      // Velocity-driven rotation inertia
+      const vx = (track(t + 0.02, cardXKey) - track(t - 0.02, cardXKey)) / 0.04;
+      const rot = clamp(vx * 0.00018, -0.095, 0.095);
+      const elev = t >= 5.50 && t <= 7.25
+        ? clamp(Math.min((t - 5.50) / 0.14, (7.25 - t) / 0.18))
+        : 0;
+
+      drawKanbanCard(
+        hx,
+        hy,
+        colW - 32,
+        108,
+        'Escribir el anuncio',
+        t > 7.1 ? 'En curso · Ana Lima' : 'Copywriting',
+        t > 7.1 ? P.progBg : P.todoBg,
+        t > 7.1 ? P.progFg : P.todoFg,
+        'AL',
+        { elevated: elev, rot, activeBorder: t > 5.3 }
+      );
+    }
+
+    g.restore();
+  }
+
+  // --------------------------------------------------------------------------
+  // STATE 4: Task Modal + Interactive Checkbox (8.60 - 11.18s)
+  // Enters after container morphs to 680x420 (8.64s), exits 100ms before shrink (11.06s)
+  // --------------------------------------------------------------------------
+  if (t >= 8.58 && t <= 11.20) {
+    const enterA = clamp((t - 8.64) / 0.16);
+    const exitA = clamp(1 - (t - 11.06) / 0.12);
+    const a4 = enterA * exitA;
+    const checked = t >= 10.00;
+    const checkP = checked ? spring(t - 10.00, 250, 20) : 0;
+
+    g.save();
+    g.globalAlpha = a4;
+
+    // Top modal breadcrumb + status badge
+    drawBadge(
+      x0 + 44,
+      y0 + 36,
+      checked ? 'LISTO PARA PUBLICAR' : 'EN CURSO · TABLERO KANBAN',
+      checked ? P.doneBg : P.progBg,
+      checked ? P.doneFg : P.progFg,
+      checked ? P.doneFg : P.progFg
+    );
+
+    // Assignee pill on top right
+    g.font = '500 15px EditorialSans';
+    g.fillStyle = P.inkSoft;
+    g.textAlign = 'right';
+    g.textBaseline = 'middle';
+    g.fillText('Asignado: Ana Lima', x0 + Wc - 44, y0 + 50);
+
+    // Task title
+    g.font = '700 34px EditorialSans';
+    g.fillStyle = P.ink;
+    g.textAlign = 'left';
+    g.textBaseline = 'alphabetic';
+    g.fillText('Escribir el anuncio', x0 + 44, y0 + 118);
+
+    // Progress bar (2/3 -> 3/3)
+    const progFrac = lerp(0.666, 1.0, clamp(checkP));
+    rrect(x0 + 44, y0 + 142, Wc - 88, 8, 4);
+    g.fillStyle = '#EFECE6';
+    g.fill();
+    rrect(x0 + 44, y0 + 142, (Wc - 88) * progFrac, 8, 4);
+    g.fillStyle = checked ? P.doneFg : P.accent;
+    g.fill();
+
+    // Checklist items
+    const items = [
+      { label: 'Gancho en 5 palabras de tipografía cinética', done: true, anim: false },
+      { label: 'Recortar capturas reales con Playwright', done: true, anim: false },
+      { label: 'Aprobar copy final del anuncio', done: checked, anim: true },
+    ];
+
+    items.forEach((it, idx) => {
+      const iy = y0 + 184 + idx * 62;
+      const isTarget = it.anim;
+      const rowBg = isTarget && t > 9.65 && t < 10.65 ? 'rgba(0, 117, 222, 0.06)' : '#F8F6F1';
+
+      rrect(x0 + 44, iy, Wc - 88, 50, 12);
+      g.fillStyle = rowBg;
+      g.fill();
+
+      // Checkbox square
+      const bx = x0 + 62, by = iy + 13, bs = 24;
+      rrect(bx, by, bs, bs, 6);
+      if (it.done) {
+        g.fillStyle = isTarget ? P.accent : P.doneFg;
+        g.fill();
+        // Checkmark stroke
+        const cp = isTarget ? clamp(checkP) : 1;
+        g.save();
+        g.strokeStyle = '#FFFFFF';
+        g.lineWidth = 2.8;
+        g.lineCap = 'round';
+        g.lineJoin = 'round';
+        g.beginPath();
+        g.moveTo(bx + 5.5, by + 12.5);
+        g.lineTo(bx + 10.5, by + 17.5);
+        g.lineTo(bx + 10.5 + 8 * cp, by + 17.5 - 10 * cp);
+        g.stroke();
+        g.restore();
+      } else {
+        g.fillStyle = '#FFFFFF';
+        g.fill();
+        g.lineWidth = 2;
+        g.strokeStyle = P.accent;
+        g.stroke();
+      }
+
+      // Label
+      g.font = '500 19px EditorialSans';
+      g.fillStyle = it.done ? P.inkSoft : P.ink;
+      g.textAlign = 'left';
+      g.textBaseline = 'middle';
+      g.fillText(it.label, bx + 40, iy + 25);
+    });
+
+    g.restore();
+  }
+
+  // --------------------------------------------------------------------------
+  // STATE 5A: Card slides into "Listo" confirmation (11.24 - 12.12s)
+  // --------------------------------------------------------------------------
+  if (t >= 11.22 && t <= 12.14) {
+    const enterA = clamp((t - 11.26) / 0.12);
+    const exitA = clamp(1 - (t - 12.02) / 0.11);
+    const a5 = enterA * exitA;
+    const slideX = (1 - spring(t - 11.24, 220, 22)) * -120;
+
+    g.save();
+    g.globalAlpha = a5;
+    g.translate(slideX, 0);
+
+    drawBadge(cx - 330, cy - 64, 'COLUMNA · LISTO (3)', P.doneBg, P.doneFg, P.doneFg);
+    drawKanbanCard(
+      cx - 330,
+      cy - 22,
+      660,
+      96,
+      'Escribir el anuncio · Aprobado por Ana Lima',
+      '✓ COMPLETADO EN EL PULSO',
+      P.doneBg,
+      P.doneFg,
+      'AL',
+      { done: true }
+    );
+    g.restore();
+  }
+
+  // --------------------------------------------------------------------------
+  // STATE 5B: Blue Pill Button "Compartir ↗" (12.22 - 13.38s)
+  // Exits 100ms before final lockup morph (13.26 - 13.38s)
+  // --------------------------------------------------------------------------
+  if (t >= 12.20 && t <= 13.40) {
+    const enterA = clamp((t - 12.26) / 0.14);
+    const exitA = clamp(1 - (t - 13.26) / 0.12);
+    const aPill = enterA * exitA;
+
+    g.save();
+    g.globalAlpha = aPill;
+    g.font = '700 26px EditorialSans';
+    g.fillStyle = '#FFFFFF';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('Compartir  ↗', cx, cy + 1);
+    g.restore();
+  }
+
+  // --------------------------------------------------------------------------
+  // STATE 6: Final Notion Lockup Card (13.48 - 16.00s)
+  // Enters 140ms after final container expansion begins
+  // --------------------------------------------------------------------------
+  if (t >= 13.46) {
+    const enterA = clamp((t - 13.52) / 0.22);
+    const pFinal = spring(t - 13.50, 190, 23);
+
+    g.save();
+    g.globalAlpha = enterA;
+    g.translate(0, (1 - pFinal) * 18);
+
+    // Official Notion emblem on the left
+    drawNotionLogo(cx - 295, cy - 16, 84, P.ink, '#FFFFFF');
+
+    // Headline: "Donde equipos y agentes piensan juntos."
+    g.textAlign = 'left';
+    g.textBaseline = 'alphabetic';
+    g.font = '700 34px EditorialSans';
+    g.fillStyle = P.ink;
+    g.fillText('Donde equipos y agentes', cx - 225, cy - 28);
+
+    // Highlight pill on "• piensan" mirroring notion.com's "• Think"
+    const pillX = cx - 225, pillY = cy - 10, pillW = 176, pillH = 46;
+    rrect(pillX, pillY, pillW, pillH, 23);
+    g.fillStyle = P.accentSoft;
+    g.fill();
+    g.fillStyle = P.accent;
+    g.beginPath();
+    g.arc(pillX + 24, pillY + pillH / 2, 7, 0, Math.PI * 2);
+    g.fill();
+
+    g.font = '700 32px EditorialSans';
+    g.fillStyle = P.ink;
+    g.fillText('piensan', pillX + 40, pillY + 34);
+    g.fillText('juntos.', pillX + pillW + 14, pillY + 34);
+
+    // URL footer
+    g.font = '600 20px EditorialMono';
+    g.fillStyle = P.accent;
+    g.fillText('notion.com', cx - 225, cy + 78);
+
+    g.restore();
+  }
+
+  g.restore(); // end container clip
+
+  // Continuous cursor guiding every state change on the beat
+  drawCursor(t, cx, cy);
+
+  g.restore(); // end portrait scale wrapper
+}
+
+window.seek = (t) => {
+  drawFrame(clamp(t, 0, DUR));
+};
+window.seek(0);
+</script>

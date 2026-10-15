@@ -1,0 +1,21 @@
+[
+  { "t": 0.20, "type": "pop", "gain": 0.48 },
+  { "t": 0.65, "type": "pop", "gain": 0.42 },
+  { "t": 1.15, "type": "chime", "gain": 0.38 },
+  { "t": 2.10, "type": "click", "gain": 0.45 },
+
+  { "t": 3.50, "type": "whoosh", "gain": 0.60 },
+  { "t": 4.10, "type": "pop", "gain": 0.45 },
+  { "t": 5.20, "type": "click", "gain": 0.55 },
+  { "t": 5.85, "type": "pop", "gain": 0.50 },
+  { "t": 6.90, "type": "correct", "gain": 0.45 },
+
+  { "t": 8.50, "type": "whoosh", "gain": 0.60 },
+  { "t": 9.10, "type": "pop", "gain": 0.45 },
+  { "t": 10.15, "type": "click", "gain": 0.55 },
+  { "t": 10.80, "type": "chime", "gain": 0.40 },
+
+  { "t": 12.00, "type": "whoosh", "gain": 0.58 },
+  { "t": 12.35, "type": "thump", "gain": 0.55 },
+  { "t": 12.80, "type": "chime", "gain": 0.55 }
+]

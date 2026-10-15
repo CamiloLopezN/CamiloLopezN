@@ -1,0 +1,10 @@
+{
+  "name": "estudio-motion-claude-code",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Estudio de Motion Graphics con Claude Code y Opus 5.5: motor determinista window.seek(t), reglas CLAUDE.md, sistema de marca y las 6 pruebas reales.",
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}

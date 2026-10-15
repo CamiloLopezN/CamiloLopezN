@@ -1,0 +1,821 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #161618; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; }
+</style>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script type="module">
+const W = 1920, H = 1080, DUR = 10;
+const canvas = document.getElementById('c');
+const g = canvas.getContext('2d');
+
+const fontDefs = [
+  ['EditorialSerif', '../../../../../../shared/fonts/NotoSerifDisplay-Regular.ttf', { weight: '400', style: 'normal' }],
+  ['EditorialSerif', '../../../../../../shared/fonts/NotoSerifDisplay-Italic.ttf', { weight: '400', style: 'italic' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-500.woff2', { weight: '500', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-600.woff2', { weight: '600', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-700.woff2', { weight: '700', style: 'normal' }],
+  ['EditorialMono', '../../../../../../shared/fonts/DejaVuSansMono.ttf', { weight: '400', style: 'normal' }],
+  ['EditorialMono', '../../../../../../shared/fonts/DejaVuSansMono-Bold.ttf', { weight: '700', style: 'normal' }],
+];
+await Promise.all(fontDefs.map(async ([name, url, desc]) => {
+  try {
+    const ff = new FontFace(name, `url(${url})`, desc);
+    await ff.load();
+    document.fonts.add(ff);
+  } catch (e) {}
+}));
+
+const C = {
+  cream: '#F4F1EA',
+  creamDark: '#E6E1D6',
+  creamBlock: '#EAE5DA',
+  park: '#DCE8D6',
+  ink: '#161618',
+  inkSoft: '#4A4946',
+  muted: '#7C7972',
+  blue: '#2B38F6',
+  blueDeep: '#1E28C8',
+  blueLight: 'rgba(43, 56, 246, 0.16)',
+  gold: '#FFD166',
+  white: '#FFFFFF',
+};
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, u) => a + (b - a) * u;
+const easeOutCubic = (u) => 1 - Math.pow(1 - clamp(u), 3);
+
+function spring(dt, k = 220, c = 18) {
+  if (dt <= 0) return 0;
+  const w0 = Math.sqrt(k);
+  const zeta = c / (2 * w0);
+  if (zeta < 1) {
+    const wd = w0 * Math.sqrt(1 - zeta * zeta);
+    return 1 - Math.exp(-zeta * w0 * dt) * (Math.cos(wd * dt) + (zeta * w0 / wd) * Math.sin(wd * dt));
+  }
+  return 1 - (1 + w0 * dt) * Math.exp(-w0 * dt);
+}
+
+function rrect(x, y, w, h, r) {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  g.beginPath();
+  g.moveTo(x + rr, y);
+  g.arcTo(x + w, y, x + w, y + h, rr);
+  g.arcTo(x + w, y + h, x, y + h, rr);
+  g.arcTo(x, y + h, x, y, rr);
+  g.arcTo(x, y, x + w, y, rr);
+  g.closePath();
+}
+
+function drawCursor(x, y, scale = 1) {
+  g.save();
+  g.translate(x, y);
+  g.scale(scale, scale);
+  g.shadowColor = 'rgba(16, 16, 20, 0.32)';
+  g.shadowBlur = 18;
+  g.shadowOffsetY = 6;
+
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.lineTo(0, 38);
+  g.lineTo(10, 29);
+  g.lineTo(18, 45);
+  g.lineTo(25, 41);
+  g.lineTo(17, 25);
+  g.lineTo(30, 25);
+  g.closePath();
+
+  g.fillStyle = '#161618';
+  g.fill();
+  g.lineWidth = 3;
+  g.strokeStyle = '#FFFFFF';
+  g.stroke();
+  g.restore();
+}
+
+function drawStar(cx, cy, rOuter, rInner, fill) {
+  g.save();
+  g.translate(cx, cy);
+  g.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const r = i % 2 === 0 ? rOuter : rInner;
+    const x = Math.cos(a) * r;
+    const y = Math.sin(a) * r;
+    if (i === 0) g.moveTo(x, y);
+    else g.lineTo(x, y);
+  }
+  g.closePath();
+  g.fillStyle = fill;
+  g.fill();
+  g.restore();
+}
+
+// ============================================================================
+// ACT 1 [0.0 - 2.4s]: Warm cream UI card (#F4F1EA) + Royal-Blue Pill Button + Spring Cursor
+// ============================================================================
+function drawAct1(t) {
+  g.fillStyle = '#161618';
+  g.fillRect(0, 0, W, H);
+
+  // Subtle architectural grid on dark background
+  g.strokeStyle = 'rgba(244, 241, 234, 0.05)';
+  g.lineWidth = 1;
+  g.beginPath();
+  for (let x = 0; x <= W; x += 80) { g.moveTo(x, 0); g.lineTo(x, H); }
+  for (let y = 0; y <= H; y += 80) { g.moveTo(0, y); g.lineTo(W, y); }
+  g.stroke();
+
+  const pCard = spring(t - 0.05, 220, 20);
+  const pressDt = t - 1.85;
+  const pressImpulse = pressDt > 0 ? Math.sin(Math.min(1, pressDt / 0.24) * Math.PI) : 0;
+  const cardScale = (0.9 + 0.1 * pCard) * (1 - 0.018 * pressImpulse);
+
+  const cw = 1280, ch = 720;
+  const cx = (W - cw) / 2, cy = (H - ch) / 2 + (1 - pCard) * 55;
+
+  g.save();
+  g.translate(W / 2, cy + ch / 2);
+  g.scale(cardScale, cardScale);
+  g.translate(-cw / 2, -ch / 2);
+
+  // Warm cream card (#F4F1EA)
+  g.save();
+  g.shadowColor = 'rgba(0, 0, 0, 0.45)';
+  g.shadowBlur = 60;
+  g.shadowOffsetY = 24;
+  rrect(0, 0, cw, ch, 36);
+  g.fillStyle = C.cream;
+  g.fill();
+  g.restore();
+
+  // Top row: Brand pill + Restaurant distance
+  const pTop = spring(t - 0.20, 220, 20);
+  g.save();
+  g.globalAlpha = clamp(t / 0.25);
+  rrect(72, 62 + (1 - pTop) * 18, 128, 44, 22);
+  g.fillStyle = C.blue;
+  g.fill();
+  g.font = '700 22px EditorialSans';
+  g.fillStyle = '#FFFFFF';
+  g.textAlign = 'center';
+  g.fillText('rango', 72 + 64, 91 + (1 - pTop) * 18);
+
+  g.textAlign = 'left';
+  g.font = '700 22px EditorialMono';
+  g.fillStyle = C.blue;
+  g.fillText('BURGER ARTESANAL · 1,2 KM', 224, 92 + (1 - pTop) * 18);
+
+  // Right badge: Kitchen status
+  rrect(cw - 350, 62, 278, 44, 22);
+  g.fillStyle = C.creamDark;
+  g.fill();
+  g.fillStyle = '#16A34A';
+  g.beginPath();
+  g.arc(cw - 320, 84, 7, 0, Math.PI * 2);
+  g.fill();
+  g.font = '600 18px EditorialSans';
+  g.fillStyle = C.ink;
+  g.fillText('Cocina lista · Sin fila', cw - 300, 90);
+  g.restore();
+
+  // Huge bold display title: "Smash doble + papas rústicas"
+  const pTitle = spring(t - 0.16, 220, 19);
+  g.save();
+  g.globalAlpha = clamp((t - 0.12) / 0.20);
+  g.textAlign = 'left';
+  g.fillStyle = C.ink;
+  g.font = '700 74px EditorialSans';
+  g.fillText('Smash doble +', 72, 225 + (1 - pTitle) * 28);
+  g.font = 'italic 400 82px EditorialSerif';
+  g.fillStyle = C.blue;
+  g.fillText('papas rústicas', 642, 225 + (1 - pTitle) * 28);
+  g.restore();
+
+  // Ingredient chips
+  const chips = ['Doble carne 180g madurada', 'Cheddar fundido', 'Papas rústicas al romero'];
+  let chipX = 72;
+  chips.forEach((chText, i) => {
+    const dtChip = t - (0.22 + i * 0.06);
+    if (dtChip <= 0) return;
+    const pc = spring(dtChip, 220, 20);
+    g.save();
+    g.font = '600 20px EditorialSans';
+    const tw = g.measureText(chText).width + 38;
+    g.globalAlpha = clamp(dtChip / 0.15);
+    rrect(chipX, 275 + (1 - pc) * 16, tw, 46, 12);
+    g.fillStyle = C.creamDark;
+    g.fill();
+    g.fillStyle = C.inkSoft;
+    g.fillText(chText, chipX + 19, 305 + (1 - pc) * 16);
+    chipX += tw + 16;
+    g.restore();
+  });
+
+  // Divider line
+  g.strokeStyle = '#DCD6C8';
+  g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(72, 370);
+  g.lineTo(cw - 72, 370);
+  g.stroke();
+
+  // Price & ETA row: "COP $38.900 · llega en 16 min"
+  const pPrice = spring(t - 0.30, 220, 20);
+  g.save();
+  g.globalAlpha = clamp((t - 0.26) / 0.18);
+  g.font = '700 20px EditorialMono';
+  g.fillStyle = C.muted;
+  g.fillText('TOTAL CON ENVÍO INCLUIDO', 72, 430 + (1 - pPrice) * 20);
+
+  g.font = '700 54px EditorialSans';
+  g.fillStyle = C.ink;
+  g.fillText('COP $38.900', 72, 498 + (1 - pPrice) * 20);
+
+  g.font = '600 34px EditorialSans';
+  g.fillStyle = C.blue;
+  g.fillText('·  llega en 16 min', 435, 496 + (1 - pPrice) * 20);
+  g.restore();
+
+  // Royal-blue pill button (#2B38F6) "Confirmar pedido →" pressed by cursor with spring(dt, 220, 18)
+  const bx = 72, by = 555, bw = cw - 144, bh = 112;
+  const btnPress = pressDt > 0 ? spring(pressDt, 220, 18) : 0;
+  const btnCompress = pressDt > 0 ? Math.sin(Math.min(1, pressDt / 0.22) * Math.PI) : 0;
+  const btnScale = 1 - 0.045 * btnCompress + (pressDt > 0.22 ? 0.015 * spring(pressDt - 0.22, 220, 18) : 0);
+
+  g.save();
+  g.translate(bx + bw / 2, by + bh / 2);
+  g.scale(btnScale, btnScale);
+  g.shadowColor = 'rgba(43, 56, 246, 0.38)';
+  g.shadowBlur = 32;
+  g.shadowOffsetY = 12;
+  rrect(-bw / 2, -bh / 2, bw, bh, 56);
+  g.fillStyle = pressDt > 0.05 ? C.blueDeep : C.blue;
+  g.fill();
+
+  // Tactile press ripple inside button
+  if (pressDt > 0) {
+    g.save();
+    rrect(-bw / 2, -bh / 2, bw, bh, 56);
+    g.clip();
+    const ripR = easeOutCubic(clamp(pressDt / 0.5)) * 700;
+    g.fillStyle = `rgba(255, 255, 255, ${0.24 * (1 - clamp(pressDt / 0.5))})`;
+    g.beginPath();
+    g.arc(180, 0, ripR, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+  }
+
+  g.font = '700 36px EditorialSans';
+  g.fillStyle = '#FFFFFF';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('Confirmar pedido  →', 0, 2);
+  g.restore();
+
+  // Animated cursor entering and pressing button with spring(dt, 220, 18)
+  if (t > 1.15) {
+    const moveP = spring(t - 1.15, 190, 20);
+    const curX = lerp(cw - 120, bx + bw * 0.64, moveP);
+    const curY = lerp(ch + 80, by + bh * 0.54, moveP);
+    const curScale = 1 - 0.18 * btnCompress;
+    drawCursor(curX, curY, curScale);
+  }
+
+  g.restore();
+}
+
+// ============================================================================
+// ACT 2 [2.4 - 3.8s]: Fullscreen royal-blue morph (#2B38F6) + elastic checkmark + kinetic type
+// ============================================================================
+function drawAct2(t) {
+  const dt = t - 2.4;
+  const pMorph = spring(dt, 220, 19);
+
+  // Morphing royal-blue container expanding from the button to fullscreen
+  if (dt < 0.35) {
+    drawAct1(2.4);
+  }
+  const x = lerp(392, 0, clamp(pMorph));
+  const y = lerp(735, 0, clamp(pMorph));
+  const w = lerp(1136, W, clamp(pMorph));
+  const h = lerp(112, H, clamp(pMorph));
+  const r = lerp(56, 0, clamp(pMorph));
+
+  g.save();
+  rrect(x, y, w, h, r);
+  g.fillStyle = C.blue;
+  g.fill();
+  g.clip();
+
+  // Subtle architectural grid on royal blue
+  g.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  g.lineWidth = 1;
+  g.beginPath();
+  for (let gx = 0; gx <= W; gx += 80) { g.moveTo(gx, 0); g.lineTo(gx, H); }
+  for (let gy = 0; gy <= H; gy += 80) { g.moveTo(0, gy); g.lineTo(W, gy); }
+  g.stroke();
+
+  // Elastic checkmark badge
+  const pCheck = spring(dt - 0.14, 240, 16);
+  if (pCheck > 0.01) {
+    g.save();
+    g.translate(W / 2, H / 2 - 95);
+    g.scale(pCheck, pCheck);
+
+    g.fillStyle = '#FFFFFF';
+    g.beginPath();
+    g.arc(0, 0, 74, 0, Math.PI * 2);
+    g.fill();
+
+    g.strokeStyle = C.blue;
+    g.lineWidth = 10;
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    g.beginPath();
+    g.moveTo(-30, 2);
+    g.lineTo(-7, 25);
+    g.lineTo(32, -20);
+    g.stroke();
+    g.restore();
+  }
+
+  // Kinetic typography: "Pedido confirmado"
+  const w1 = spring(dt - 0.20, 220, 18);
+  const w2 = spring(dt - 0.28, 220, 18);
+  g.textAlign = 'center';
+  if (dt > 0.20) {
+    g.save();
+    g.globalAlpha = clamp((dt - 0.20) / 0.15);
+    g.font = '700 86px EditorialSans';
+    g.fillStyle = '#FFFFFF';
+    g.fillText('Pedido', W / 2 - 255, H / 2 + 72 + (1 - w1) * 38);
+    g.restore();
+  }
+  if (dt > 0.28) {
+    g.save();
+    g.globalAlpha = clamp((dt - 0.28) / 0.15);
+    g.font = 'italic 400 92px EditorialSerif';
+    g.fillStyle = C.cream;
+    g.fillText('confirmado', W / 2 + 195, H / 2 + 72 + (1 - w2) * 38);
+    g.restore();
+  }
+
+  if (dt > 0.36) {
+    const pSub = spring(dt - 0.36, 210, 20);
+    g.save();
+    g.globalAlpha = clamp((dt - 0.36) / 0.18);
+    rrect(W / 2 - 330, H / 2 + 125 + (1 - pSub) * 20, 660, 54, 27);
+    g.fillStyle = 'rgba(255, 255, 255, 0.18)';
+    g.fill();
+    g.font = '700 22px EditorialMono';
+    g.fillStyle = '#FFFFFF';
+    g.fillText('BURGER ARTESANAL · SALIDA EN RUTA', W / 2, H / 2 + 159 + (1 - pSub) * 20);
+    g.restore();
+  }
+
+  g.restore();
+}
+
+// ============================================================================
+// ACT 3 [3.8 - 7.8s]: Split Screen — Left 65% Architectural Map + Right 35% Charcoal HUD
+// ============================================================================
+function evalCubic(p0, p1, p2, p3, u) {
+  const m = 1 - u;
+  const x = m * m * m * p0[0] + 3 * m * m * u * p1[0] + 3 * m * u * u * p2[0] + u * u * u * p3[0];
+  const y = m * m * m * p0[1] + 3 * m * m * u * p1[1] + 3 * m * u * u * p2[1] + u * u * u * p3[1];
+  const dx = 3 * m * m * (p1[0] - p0[0]) + 6 * m * u * (p2[0] - p1[0]) + 3 * u * u * (p3[0] - p2[0]);
+  const dy = 3 * m * m * (p1[1] - p0[1]) + 6 * m * u * (p2[1] - p1[1]) + 3 * u * u * (p3[1] - p2[1]);
+  return { x, y, angle: Math.atan2(dy, dx) };
+}
+
+function drawAct3(t) {
+  const dt = t - 3.8;
+  const dur3 = 4.0; // 3.8 -> 7.8
+  const u = clamp(dt / dur3);
+  const pEnter = spring(dt, 210, 20);
+
+  const mapW = Math.round(W * 0.65); // 1248 px
+  const hudW = W - mapW;             // 672 px
+
+  // --- LEFT 65%: Stylized Architectural City Map ---
+  g.save();
+  g.beginPath();
+  g.rect(0, 0, mapW, H);
+  g.clip();
+
+  g.fillStyle = C.cream;
+  g.fillRect(0, 0, mapW, H);
+
+  // Subtle architectural grid
+  g.strokeStyle = '#E2DDD2';
+  g.lineWidth = 1;
+  g.beginPath();
+  for (let x = 0; x <= mapW; x += 64) { g.moveTo(x, 0); g.lineTo(x, H); }
+  for (let y = 0; y <= H; y += 64) { g.moveTo(0, y); g.lineTo(mapW, y); }
+  g.stroke();
+
+  // Architectural city blocks with clean bevel shadows
+  const blocks = [
+    [60, 60, 320, 220, C.creamBlock],
+    [430, 60, 410, 220, C.park],       // Parque El Virrey
+    [890, 60, 290, 220, C.creamBlock],
+    [60, 340, 320, 320, C.creamBlock],
+    [430, 340, 410, 320, C.creamBlock],
+    [890, 340, 290, 320, C.creamBlock],
+    [60, 720, 320, 290, C.park],
+    [430, 720, 410, 290, C.creamBlock],
+    [890, 720, 290, 290, C.creamBlock],
+  ];
+  for (const [bx, by, bw, bh, col] of blocks) {
+    g.save();
+    g.shadowColor = 'rgba(22, 22, 24, 0.06)';
+    g.shadowBlur = 16;
+    g.shadowOffsetY = 6;
+    rrect(bx, by, bw, bh, 20);
+    g.fillStyle = col;
+    g.fill();
+    g.lineWidth = 1.5;
+    g.strokeStyle = '#D8D2C5';
+    g.stroke();
+    g.restore();
+  }
+
+  // High-contrast readable street labels (fixed in Round 2 critique for phone readability!)
+  g.font = '700 18px EditorialMono';
+  g.fillStyle = '#5A5750';
+  g.textAlign = 'center';
+  g.fillText('CALLE 85 · ZONA T', 635, 316);
+  g.fillText('AV. CALLE 82', 635, 696);
+  g.fillStyle = '#3E5C38';
+  g.fillText('PARQUE EL VIRREY', 635, 175);
+
+  g.save();
+  g.translate(405, 500);
+  g.rotate(-Math.PI / 2);
+  g.fillStyle = '#5A5750';
+  g.fillText('CARRERA 15', 0, 0);
+  g.restore();
+
+  g.save();
+  g.translate(865, 500);
+  g.rotate(-Math.PI / 2);
+  g.fillStyle = '#5A5750';
+  g.fillText('CARRERA 11', 0, 0);
+  g.restore();
+
+  // Animated blue route curve from Restaurant (220, 845) to Destination (1025, 195)
+  const p0 = [220, 845];
+  const p1 = [240, 390];
+  const p2 = [960, 620];
+  const p3 = [1025, 195];
+
+  // Route base track
+  g.strokeStyle = 'rgba(43, 56, 246, 0.18)';
+  g.lineWidth = 16;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(p0[0], p0[1]);
+  g.bezierCurveTo(p1[0], p1[1], p2[0], p2[1], p3[0], p3[1]);
+  g.stroke();
+
+  // Animated active route curve
+  g.save();
+  g.shadowColor = 'rgba(43, 56, 246, 0.35)';
+  g.shadowBlur = 20;
+  g.strokeStyle = C.blue;
+  g.lineWidth = 12;
+  g.lineCap = 'round';
+  g.beginPath();
+  const steps = 80;
+  const maxStep = Math.max(1, Math.floor(u * steps));
+  for (let i = 0; i <= maxStep; i++) {
+    const pt = evalCubic(p0, p1, p2, p3, i / steps);
+    if (i === 0) g.moveTo(pt.x, pt.y);
+    else g.lineTo(pt.x, pt.y);
+  }
+  g.stroke();
+  g.restore();
+
+  // Origin node: Burger Artesanal
+  g.save();
+  g.translate(p0[0], p0[1]);
+  g.fillStyle = C.ink;
+  g.beginPath();
+  g.arc(0, 0, 16, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = C.cream;
+  g.beginPath();
+  g.arc(0, 0, 7, 0, Math.PI * 2);
+  g.fill();
+
+  rrect(-135, 26, 270, 56, 14);
+  g.fillStyle = C.ink;
+  g.fill();
+  g.font = '700 20px EditorialSans';
+  g.fillStyle = '#FFFFFF';
+  g.textAlign = 'center';
+  g.fillText('Burger Artesanal', 0, 61);
+  g.restore();
+
+  // Destination node: Tu puerta
+  g.save();
+  g.translate(p3[0], p3[1]);
+  const destPulse = 1 + 0.18 * Math.sin(t * 7);
+  g.fillStyle = 'rgba(43, 56, 246, 0.22)';
+  g.beginPath();
+  g.arc(0, 0, 32 * destPulse, 0, Math.PI * 2);
+  g.fill();
+
+  g.fillStyle = C.blue;
+  g.beginPath();
+  g.arc(0, 0, 16, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = '#FFFFFF';
+  g.beginPath();
+  g.arc(0, 0, 7, 0, Math.PI * 2);
+  g.fill();
+
+  rrect(-125, -82, 250, 56, 14);
+  g.fillStyle = C.blue;
+  g.fill();
+  g.font = '700 21px EditorialSans';
+  g.fillStyle = '#FFFFFF';
+  g.textAlign = 'center';
+  g.fillText('Tu puerta · Ap. 502', 0, -47);
+  g.restore();
+
+  // Pulsing scooter beacon along Bezier curve
+  const cur = evalCubic(p0, p1, p2, p3, u);
+  g.save();
+  g.translate(cur.x, cur.y);
+
+  const ringPhase = (t * 2) % 1;
+  g.strokeStyle = `rgba(43, 56, 246, ${0.7 * (1 - ringPhase)})`;
+  g.lineWidth = 4;
+  g.beginPath();
+  g.arc(0, 0, 26 + ringPhase * 42, 0, Math.PI * 2);
+  g.stroke();
+
+  g.shadowColor = 'rgba(22, 22, 24, 0.32)';
+  g.shadowBlur = 20;
+  g.shadowOffsetY = 8;
+  g.fillStyle = C.blue;
+  g.beginPath();
+  g.arc(0, 0, 28, 0, Math.PI * 2);
+  g.fill();
+  g.lineWidth = 4;
+  g.strokeStyle = '#FFFFFF';
+  g.stroke();
+
+  // Directional navigation chevron inside beacon
+  g.save();
+  g.rotate(cur.angle);
+  g.fillStyle = '#FFFFFF';
+  g.beginPath();
+  g.moveTo(13, 0);
+  g.lineTo(-9, -9);
+  g.lineTo(-4, 0);
+  g.lineTo(-9, 9);
+  g.closePath();
+  g.fill();
+  g.restore();
+
+  // Floating rider pill next to beacon
+  rrect(-115, -76, 230, 42, 21);
+  g.fillStyle = '#FFFFFF';
+  g.fill();
+  g.lineWidth = 2;
+  g.strokeStyle = C.blue;
+  g.stroke();
+  g.font = '700 18px EditorialSans';
+  g.fillStyle = C.ink;
+  g.textAlign = 'center';
+  g.fillText('Moto en vivo · 42 km/h', 0, -49);
+  g.restore();
+
+  g.restore();
+
+  // --- RIGHT 35%: Dark Charcoal HUD (#161618) with Giant Tabular Countdown on the Beat ---
+  const hudX = mapW + (1 - pEnter) * 120;
+  g.save();
+  g.fillStyle = C.ink;
+  g.fillRect(hudX, 0, hudW, H);
+
+  g.strokeStyle = '#2C2C30';
+  g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(hudX, 0);
+  g.lineTo(hudX, H);
+  g.stroke();
+
+  const padX = hudX + 56;
+
+  // Top HUD header
+  rrect(padX, 64, 118, 40, 20);
+  g.fillStyle = C.blue;
+  g.fill();
+  g.font = '700 20px EditorialSans';
+  g.fillStyle = '#FFFFFF';
+  g.textAlign = 'center';
+  g.fillText('rango', padX + 59, 91);
+
+  g.textAlign = 'left';
+  g.font = '700 18px EditorialMono';
+  g.fillStyle = '#9CA3AF';
+  g.fillText('TELEMETRÍA DE ENTREGA', padX + 138, 90);
+
+  // Beat-synced countdown state machine:
+  // [3.8 - 5.0s]: 16 min · En la cocina
+  // [5.0 - 6.0s]: 09 min · Salió para entrega
+  // [6.0 - 7.0s]: 01 min · Entrando a tu calle
+  // [7.0 - 7.8s]: 00 min · En tu puerta
+  let mins = 16, stageIdx = 0, statusTitle = 'En la cocina', statusSub = 'Sellando tu Smash doble';
+  let beatT0 = 3.8;
+  if (t >= 7.0) {
+    mins = 0; stageIdx = 3; statusTitle = 'En tu puerta'; statusSub = 'Repartidor entregando pedido'; beatT0 = 7.0;
+  } else if (t >= 6.0) {
+    mins = 1; stageIdx = 2; statusTitle = 'Entrando a tu calle'; statusSub = 'A 180 metros · Carrera 11'; beatT0 = 6.0;
+  } else if (t >= 5.0) {
+    mins = 9; stageIdx = 1; statusTitle = 'Salió para entrega'; statusSub = 'Cruzando Calle 85 a 42 km/h'; beatT0 = 5.0;
+  }
+
+  const pBeat = spring(t - beatT0, 240, 18);
+
+  g.font = '700 20px EditorialMono';
+  g.fillStyle = '#F4F1EA';
+  g.fillText('LLEGADA ESTIMADA', padX, 205);
+
+  // Giant tabular countdown number
+  g.save();
+  g.translate(padX, 345 + (1 - pBeat) * 24);
+  g.font = '700 148px EditorialMono';
+  g.fillStyle = '#FFFFFF';
+  g.fillText(String(mins).padStart(2, '0'), 0, 0);
+
+  g.font = '600 46px EditorialSans';
+  g.fillStyle = C.blue;
+  g.fillText('min', 210, -12);
+  g.restore();
+
+  // Active status card inside HUD
+  rrect(padX, 405, hudW - 112, 130, 22);
+  g.fillStyle = '#222226';
+  g.fill();
+  g.lineWidth = 2;
+  g.strokeStyle = C.blue;
+  g.stroke();
+
+  g.font = '700 32px EditorialSans';
+  g.fillStyle = '#FFFFFF';
+  g.fillText(statusTitle, padX + 28, 458);
+  g.font = '500 21px EditorialSans';
+  g.fillStyle = '#A1A1AA';
+  g.fillText(statusSub, padX + 28, 502);
+
+  // 3-step live checklist
+  const stepsList = [
+    { label: '16 min · En la cocina', active: stageIdx >= 0, done: stageIdx > 0 },
+    { label: '09 min · Salió para entrega', active: stageIdx >= 1, done: stageIdx > 1 },
+    { label: '01 min · Entrando a tu calle', active: stageIdx >= 2, done: stageIdx > 2 },
+  ];
+  stepsList.forEach((st, idx) => {
+    const sy = 605 + idx * 82;
+    rrect(padX, sy, hudW - 112, 64, 16);
+    g.fillStyle = st.active ? 'rgba(43, 56, 246, 0.16)' : '#1C1C20';
+    g.fill();
+    g.lineWidth = 1.5;
+    g.strokeStyle = st.active ? C.blue : '#2E2E34';
+    g.stroke();
+
+    g.fillStyle = st.done ? '#22C55E' : st.active ? C.blue : '#52525B';
+    g.beginPath();
+    g.arc(padX + 32, sy + 32, 11, 0, Math.PI * 2);
+    g.fill();
+
+    g.font = '600 22px EditorialSans';
+    g.fillStyle = st.active ? '#F4F1EA' : '#71717A';
+    g.fillText(st.label, padX + 60, sy + 40);
+  });
+
+  // Bottom progress bar synced to route u
+  rrect(padX, 915, hudW - 112, 18, 9);
+  g.fillStyle = '#27272A';
+  g.fill();
+  rrect(padX, 915, (hudW - 112) * u, 18, 9);
+  g.fillStyle = C.blue;
+  g.fill();
+
+  g.font = '700 18px EditorialMono';
+  g.fillStyle = '#A1A1AA';
+  g.fillText(`DISTANCIA RECORRIDA · ${(u * 1.2).toFixed(2)} / 1.20 KM`, padX, 968);
+
+  g.restore();
+}
+
+// ============================================================================
+// ACT 4 [7.8 - 10.0s]: Royal-Blue Finale Card + "rango" Lockup + 5 Stars on the Beat
+// ============================================================================
+function drawAct4(t) {
+  const dt = t - 7.8;
+  const pMorph = spring(dt, 210, 19);
+
+  if (dt < 0.35) {
+    drawAct3(7.8);
+  }
+
+  // Expand royal-blue card to fullscreen
+  const w = lerp(672, W, clamp(pMorph));
+  const x = W - w;
+  g.save();
+  g.fillStyle = C.blue;
+  g.fillRect(x, 0, w, H);
+
+  // Subtle architectural grid
+  g.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  g.lineWidth = 1;
+  g.beginPath();
+  for (let gx = 0; gx <= W; gx += 80) { g.moveTo(gx, 0); g.lineTo(gx, H); }
+  for (let gy = 0; gy <= H; gy += 80) { g.moveTo(0, gy); g.lineTo(W, gy); }
+  g.stroke();
+
+  const pBrand = spring(dt - 0.12, 220, 18);
+  g.save();
+  g.translate(W / 2, 230 + (1 - pBrand) * 28);
+  g.scale(0.85 + 0.15 * pBrand, 0.85 + 0.15 * pBrand);
+  rrect(-115, -36, 230, 72, 36);
+  g.fillStyle = '#FFFFFF';
+  g.fill();
+  g.font = '700 38px EditorialSans';
+  g.fillStyle = C.blue;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('rango', 0, 2);
+  g.restore();
+
+  // Headline: "Buen provecho."
+  const pHead = spring(dt - 0.22, 220, 18);
+  g.save();
+  g.globalAlpha = clamp((dt - 0.18) / 0.18);
+  g.textAlign = 'center';
+  g.font = 'italic 400 108px EditorialSerif';
+  g.fillStyle = '#FFFFFF';
+  g.fillText('Buen provecho.', W / 2, 435 + (1 - pHead) * 36);
+
+  // Subheadline: "Entregado en 16 min, como prometimos."
+  g.font = '600 44px EditorialSans';
+  g.fillStyle = C.cream;
+  g.fillText('Entregado en 16 min, como prometimos.', W / 2, 520 + (1 - pHead) * 28);
+  g.restore();
+
+  // 5 Golden/White Stars popping in one by one on the beat!
+  const starTimes = [8.15, 8.30, 8.45, 8.60, 8.75];
+  const starSpacing = 112;
+  const startX = W / 2 - (starSpacing * 4) / 2;
+
+  starTimes.forEach((st, idx) => {
+    const sdt = t - st;
+    if (sdt <= 0) return;
+    const sc = spring(sdt, 260, 15);
+    const sx = startX + idx * starSpacing;
+    const sy = 675;
+
+    g.save();
+    g.translate(sx, sy);
+    g.scale(sc, sc);
+    rrect(-46, -46, 92, 92, 24);
+    g.fillStyle = 'rgba(255, 255, 255, 0.16)';
+    g.fill();
+    drawStar(0, 0, 30, 14, C.gold);
+    g.restore();
+  });
+
+  if (t > 8.85) {
+    const pFoot = spring(t - 8.85, 210, 20);
+    g.save();
+    g.globalAlpha = clamp((t - 8.85) / 0.2);
+    g.textAlign = 'center';
+    g.font = '700 22px EditorialMono';
+    g.fillStyle = 'rgba(255, 255, 255, 0.88)';
+    g.fillText('CALIFICACIÓN DE ENTREGA · 5.0 ★ · SIN RETRASOS', W / 2, 825 + (1 - pFoot) * 20);
+    g.restore();
+  }
+
+  g.restore();
+}
+
+window.seek = (t) => {
+  const tc = clamp(t, 0, DUR);
+  if (tc < 2.4) {
+    drawAct1(tc);
+  } else if (tc < 3.8) {
+    drawAct2(tc);
+  } else if (tc < 7.8) {
+    drawAct3(tc);
+  } else {
+    drawAct4(tc);
+  }
+};
+window.seek(0);
+</script>

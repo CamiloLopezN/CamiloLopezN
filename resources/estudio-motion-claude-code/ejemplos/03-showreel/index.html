@@ -1,0 +1,825 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #141413; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; }
+</style>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script type="module">
+const W = 1920, H = 1080;
+const DUR = 15.0;
+const canvas = document.getElementById('c');
+const g = canvas.getContext('2d');
+
+const fontDefs = [
+  ['EditorialSerif', '../../../../../../shared/fonts/NotoSerifDisplay-Regular.ttf', { weight: '400', style: 'normal' }],
+  ['EditorialSerif', '../../../../../../shared/fonts/NotoSerifDisplay-Medium.ttf', { weight: '500', style: 'normal' }],
+  ['EditorialSerif', '../../../../../../shared/fonts/NotoSerifDisplay-Italic.ttf', { weight: '400', style: 'italic' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-500.woff2', { weight: '500', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-600.woff2', { weight: '600', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-700.woff2', { weight: '700', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-800.woff2', { weight: '800', style: 'normal' }],
+  ['EditorialMono', '../../../../../../shared/fonts/DejaVuSansMono.ttf', { weight: '400', style: 'normal' }],
+  ['EditorialMono', '../../../../../../shared/fonts/DejaVuSansMono-Bold.ttf', { weight: '700', style: 'normal' }],
+];
+await Promise.all(fontDefs.map(async ([name, url, desc]) => {
+  try {
+    const ff = new FontFace(name, `url(${url})`, desc);
+    await ff.load();
+    document.fonts.add(ff);
+  } catch (e) {}
+}));
+
+// Claude Factory Palette (#141413 charcoal, #FAF9F5 cream, #D97757 terracotta)
+const C = {
+  charcoal: '#141413',
+  charcoalSoft: '#1E1E1C',
+  charcoalGrid: '#242320',
+  cream: '#FAF9F5',
+  creamGrid: '#E6E2D6',
+  creamMuted: '#8C877B',
+  terracotta: '#D97757',
+  terracottaDark: '#B35538',
+  terracottaLight: '#F29D80',
+};
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, u) => a + (b - a) * u;
+const easeOutCubic = (u) => 1 - Math.pow(1 - clamp(u), 3);
+const easeInOutCubic = (u) => {
+  const x = clamp(u);
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+};
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function() {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function spring(dt, k = 190, c = 22) {
+  if (dt <= 0) return 0;
+  const w0 = Math.sqrt(k);
+  const zeta = c / (2 * w0);
+  if (zeta < 1) {
+    const wd = w0 * Math.sqrt(1 - zeta * zeta);
+    return 1 - Math.exp(-zeta * w0 * dt) * (Math.cos(wd * dt) + (zeta * w0 / wd) * Math.sin(wd * dt));
+  }
+  return 1 - (1 + w0 * dt) * Math.exp(-w0 * dt);
+}
+
+function rrect(x, y, w, h, r) {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  g.beginPath();
+  g.moveTo(x + rr, y);
+  g.arcTo(x + w, y, x + w, y + h, rr);
+  g.arcTo(x + w, y + h, x, y + h, rr);
+  g.arcTo(x, y + h, x, y, rr);
+  g.arcTo(x, y, x + w, y, rr);
+  g.closePath();
+}
+
+function drawGrid(color, step = 60, ox = 0, oy = 0) {
+  g.save();
+  g.strokeStyle = color;
+  g.lineWidth = 1;
+  g.beginPath();
+  for (let x = (ox % step); x < W; x += step) {
+    g.moveTo(x, 0); g.lineTo(x, H);
+  }
+  for (let y = (oy % step); y < H; y += step) {
+    g.moveTo(0, y); g.lineTo(W, y);
+  }
+  g.stroke();
+  g.restore();
+}
+
+function drawHUD(t, dark = true, sceneLabel = '') {
+  const col = dark ? 'rgba(250, 249, 245, 0.52)' : 'rgba(20, 20, 19, 0.52)';
+  g.save();
+  g.font = '700 18px EditorialMono';
+  g.fillStyle = C.terracotta;
+  g.fillText('● CLAUDE · MOTION REEL', 74, 66);
+
+  g.font = '400 18px EditorialMono';
+  g.fillStyle = col;
+  g.fillText(sceneLabel, 355, 66);
+
+  g.textAlign = 'right';
+  const frameNum = Math.min(900, Math.floor(t * 60));
+  g.fillText(`f(t = ${t.toFixed(2)}s)  ·  CUADRO ${String(frameNum).padStart(3, '0')} / 900`, W - 74, 66);
+  g.restore();
+}
+
+// Precompute deterministic particles for Scene 1 ("zero keyframes." shatter)
+const SHATTER_PARTICLES = (() => {
+  const rand = mulberry32(101);
+  const pts = [];
+  for (let i = 0; i < 280; i++) {
+    const x0 = 360 + rand() * 1200;
+    const y0 = 420 + (rand() - 0.5) * 150;
+    const dx = x0 - 960;
+    const dy = y0 - 500;
+    const ang = Math.atan2(dy, dx) + (rand() - 0.5) * 0.85;
+    const spd = 280 + rand() * 880;
+    pts.push({
+      x0, y0,
+      vx: Math.cos(ang) * spd,
+      vy: Math.sin(ang) * spd - 160 * rand(),
+      grav: 420 + rand() * 380,
+      size: 5 + rand() * 20,
+      rot0: rand() * Math.PI * 2,
+      vrot: (rand() - 0.5) * 14,
+      isTerra: rand() < 0.34,
+      shape: i % 3, // 0: rect shard, 1: circle, 2: glyph bar
+    });
+  }
+  return pts;
+})();
+
+// ============================================================================
+// SCENE 1 [0.0 - 2.5s]: "zero keyframes." -> Shatters with physics at t = 1.25s
+// ============================================================================
+function scene1(t) {
+  g.fillStyle = C.charcoal;
+  g.fillRect(0, 0, W, H);
+  drawGrid(C.charcoalGrid, 60, -t * 18, -t * 10);
+  drawHUD(t, true, '01 / CONTRATO DETERMINISTA');
+
+  const tShatter = 1.25;
+  if (t < tShatter) {
+    const pIn = spring(t - 0.08, 210, 20);
+    const scale = 0.88 + 0.12 * pIn;
+    const preShake = t > 1.05 ? Math.sin(t * 95) * ((t - 1.05) * 24) : 0;
+
+    g.save();
+    g.translate(W / 2 + preShake, H / 2 - 20);
+    g.scale(scale, scale);
+
+    // Subtle geometric framing ticks
+    g.strokeStyle = C.terracotta;
+    g.lineWidth = 2.5;
+    const bw = 720, bh = 135;
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([sx, sy]) => {
+      g.beginPath();
+      g.moveTo(sx * bw, sy * bh - sy * 28);
+      g.lineTo(sx * bw, sy * bh);
+      g.lineTo(sx * bw - sx * 28, sy * bh);
+      g.stroke();
+    });
+
+    g.font = '400 162px EditorialSerif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = C.cream;
+    g.fillText('zero keyframes', -22, 0);
+
+    // Terracotta period
+    g.fillStyle = C.terracotta;
+    g.beginPath();
+    g.arc(544, 36, 15 * spring(t - 0.32, 260, 16), 0, Math.PI * 2);
+    g.fill();
+
+    // Subtitle pill
+    const pSub = clamp((t - 0.35) / 0.3);
+    g.globalAlpha = pSub;
+    g.font = '500 22px EditorialMono';
+    g.fillStyle = C.terracottaLight;
+    g.fillText('window.seek(t)  ·  SIN LÍNEA DE TIEMPO MANUAL', 0, 128);
+    g.restore();
+  } else {
+    const dt = t - tShatter;
+    // Expanding shockwave ring
+    const ringR = easeOutCubic(clamp(dt / 0.85)) * 980;
+    const ringA = clamp(1 - dt / 0.85);
+    g.save();
+    g.strokeStyle = C.terracotta;
+    g.lineWidth = 4 * ringA;
+    g.globalAlpha = ringA * 0.75;
+    g.beginPath();
+    g.arc(W / 2, H / 2 - 20, ringR, 0, Math.PI * 2);
+    g.stroke();
+    g.restore();
+
+    // Ghost echo of equation behind shatter
+    g.save();
+    g.globalAlpha = clamp(dt / 0.25) * clamp(1 - (dt - 0.9) / 0.35);
+    g.font = 'italic 400 76px EditorialSerif';
+    g.fillStyle = C.terracotta;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('x(t) = x₀ + v₀·t + ½·g·t²', W / 2, H / 2 - 10);
+    g.restore();
+
+    // Physics particles
+    for (const p of SHATTER_PARTICLES) {
+      const px = p.x0 + p.vx * dt;
+      const py = p.y0 + p.vy * dt + 0.5 * p.grav * dt * dt;
+      const alpha = clamp(1 - dt / 1.22);
+      if (alpha <= 0.01) continue;
+      g.save();
+      g.globalAlpha = alpha;
+      g.translate(px, py);
+      g.rotate(p.rot0 + p.vrot * dt);
+      g.fillStyle = p.isTerra ? C.terracotta : C.cream;
+      if (p.shape === 0) {
+        g.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.65);
+      } else if (p.shape === 1) {
+        g.beginPath();
+        g.arc(0, 0, p.size * 0.45, 0, Math.PI * 2);
+        g.fill();
+      } else {
+        g.fillRect(-p.size * 0.8, -2.5, p.size * 1.6, 5);
+      }
+      g.restore();
+    }
+  }
+}
+
+// ============================================================================
+// SCENE 2 [2.5 - 5.0s]: Cream Stage · "squash & stretch" (escala 1.38 × 0.72)
+// ============================================================================
+function scene2(t) {
+  const dt = t - 2.5;
+  g.fillStyle = C.cream;
+  g.fillRect(0, 0, W, H);
+  drawGrid(C.creamGrid, 60, -t * 14, 0);
+  drawHUD(t, false, '02 / FÍSICA ELÁSTICA · CONSERVACIÓN DE VOLUMEN');
+
+  // Left editorial column
+  const pTitle = spring(dt, 200, 22);
+  g.save();
+  g.translate(110, 210 + (1 - pTitle) * 40);
+  g.font = '700 20px EditorialMono';
+  g.fillStyle = C.terracotta;
+  g.fillText('PRINCIPIO 01 · DISNEY + FÍSICA', 0, 0);
+
+  g.font = '400 104px EditorialSerif';
+  g.fillStyle = C.charcoal;
+  g.fillText('squash &', 0, 96);
+  g.font = 'italic 400 108px EditorialSerif';
+  g.fillStyle = C.terracotta;
+  g.fillText('stretch.', 0, 198);
+
+  g.font = '500 24px EditorialSans';
+  g.fillStyle = C.creamMuted;
+  g.fillText('Deformación elástica en el impacto:', 0, 275);
+  g.font = '700 28px EditorialMono';
+  g.fillStyle = C.charcoal;
+  g.fillText('escala 1.38 × 0.72', 0, 318);
+  g.restore();
+
+  // Floor line on right stage
+  const floorY = 820;
+  const stageX0 = 760, stageX1 = 1780;
+  g.strokeStyle = C.charcoal;
+  g.lineWidth = 3;
+  g.beginPath();
+  g.moveTo(stageX0, floorY);
+  g.lineTo(stageX1, floorY);
+  g.stroke();
+
+  // Bounce physics across 3 hops
+  const period = 0.65;
+  const phase = (dt % period) / period; // 0..1 per bounce
+  // Parabolic height: 0 at phase=0 and phase=1, max 1 at phase=0.5
+  const hNorm = 4 * phase * (1 - phase);
+  const impact = Math.exp(-Math.pow(Math.min(phase, 1 - phase) * 9.5, 2)); // 1 right at floor impact
+  const sx = lerp(0.84, 1.38, impact);
+  const sy = 1 / sx; // volume preservation!
+
+  const ballR = 88;
+  const ballX = lerp(900, 1620, clamp(dt / 2.35));
+  const maxJump = 390;
+  const ballY = floorY - ballR * sy - hNorm * maxJump;
+
+  // Draw ghost trajectory arc & previous bounce snapshots
+  for (let k = 0; k <= 16; k++) {
+    const u = k / 16;
+    const gx = lerp(900, 1620, u);
+    const gp = ((u * 2.35) % period) / period;
+    const gh = 4 * gp * (1 - gp);
+    const gy = floorY - ballR - gh * maxJump;
+    g.fillStyle = 'rgba(217, 119, 87, 0.24)';
+    g.beginPath();
+    g.arc(gx, gy, 5, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  // Floor shadow
+  const shW = ballR * 1.35 * (1 - hNorm * 0.55) * sx;
+  g.fillStyle = `rgba(20, 20, 19, ${0.22 * (1 - hNorm * 0.65)})`;
+  g.beginPath();
+  g.ellipse(ballX, floorY + 8, shW, 14, 0, 0, Math.PI * 2);
+  g.fill();
+
+  // Impact ripple rings when near floor
+  if (impact > 0.25) {
+    g.save();
+    g.strokeStyle = C.terracotta;
+    g.lineWidth = 2.5;
+    g.globalAlpha = impact * 0.7;
+    g.beginPath();
+    g.ellipse(ballX, floorY + 4, ballR * 1.8 * (1.5 - impact * 0.4), 22, 0, 0, Math.PI * 2);
+    g.stroke();
+    g.restore();
+  }
+
+  // The elastic terracotta sphere
+  g.save();
+  g.translate(ballX, ballY);
+  g.scale(sx, sy);
+  g.fillStyle = C.terracotta;
+  g.beginPath();
+  g.arc(0, 0, ballR, 0, Math.PI * 2);
+  g.fill();
+  g.lineWidth = 3.5;
+  g.strokeStyle = C.charcoal;
+  g.stroke();
+
+  // Inner specular geometric ring
+  g.strokeStyle = C.cream;
+  g.lineWidth = 2.5;
+  g.beginPath();
+  g.arc(-22, -22, 24, Math.PI * 0.9, Math.PI * 1.65);
+  g.stroke();
+  g.restore();
+
+  // Live architectural bounding box & dimension readout around sphere
+  const bw = ballR * 2 * sx, bh = ballR * 2 * sy;
+  g.save();
+  g.strokeStyle = C.charcoal;
+  g.lineWidth = 1.5;
+  g.setLineDash([6, 5]);
+  g.strokeRect(ballX - bw / 2, ballY - bh / 2, bw, bh);
+  g.setLineDash([]);
+
+  rrect(ballX + bw / 2 + 18, ballY - 26, 235, 52, 10);
+  g.fillStyle = C.charcoal;
+  g.fill();
+  g.font = '700 19px EditorialMono';
+  g.fillStyle = C.cream;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(`${sx.toFixed(2)} × ${sy.toFixed(2)}`, ballX + bw / 2 + 135, ballY);
+  g.restore();
+}
+
+// ============================================================================
+// SCENE 3 [5.0 - 7.5s]: Terracotta "movimiento" + Dark Circle -> Triangle Morph
+// ============================================================================
+function polarTriangleR(theta) {
+  // Polar equation of a rounded equilateral triangle
+  const a = ((theta + Math.PI / 2) % (2 * Math.PI / 3) + (2 * Math.PI / 3)) % (2 * Math.PI / 3) - Math.PI / 3;
+  return 1 / Math.cos(a * 0.92);
+}
+
+function scene3(t) {
+  const dt = t - 5.0;
+  // Split screen morph: left side terracotta kinetic type, right side dark geometric morph
+  const splitX = lerp(W, 860, spring(dt - 0.55, 170, 22));
+
+  // Left side: Terracotta kinetic typography
+  g.save();
+  g.beginPath();
+  g.rect(0, 0, splitX, H);
+  g.clip();
+  g.fillStyle = C.terracotta;
+  g.fillRect(0, 0, W, H);
+  drawGrid('rgba(20, 20, 19, 0.14)', 60, t * 20, 0);
+
+  const rows = 5;
+  for (let r = 0; r < rows; r++) {
+    const dir = r % 2 === 0 ? 1 : -1;
+    const y = 195 + r * 175;
+    const shift = dir * (dt * 140) + (1 - spring(dt - r * 0.06, 180, 20)) * 320 * dir;
+    g.font = r === 2 ? 'italic 400 132px EditorialSerif' : '700 118px EditorialSans';
+    g.fillStyle = r === 2 ? C.cream : 'rgba(20, 20, 19, 0.88)';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('movimiento · movimiento · movimiento', 430 + shift * 0.35, y);
+  }
+  drawHUD(t, false, '03 / TIPOGRAFÍA CINÉTICA & MORFOLOGÍA');
+  g.restore();
+
+  // Right side: Dark stage where Circle morphs smoothly into Triangle r(θ)
+  if (splitX < W - 2) {
+    g.save();
+    g.beginPath();
+    g.rect(splitX, 0, W - splitX, H);
+    g.clip();
+    g.fillStyle = C.charcoal;
+    g.fillRect(splitX, 0, W - splitX, H);
+    drawGrid(C.charcoalGrid, 60, -t * 15, 0);
+
+    const cx = splitX + (W - splitX) / 2;
+    const cy = H / 2 - 20;
+    const morph = 0.5 - 0.5 * Math.cos(Math.max(0, dt - 0.65) * 3.4); // smooth oscillation 0 -> 1 -> 0
+    const baseR = 165;
+
+    // Polar reference circles
+    g.strokeStyle = 'rgba(250, 249, 245, 0.14)';
+    g.lineWidth = 1.5;
+    [baseR * 0.65, baseR, baseR * 1.45].forEach((rad) => {
+      g.beginPath();
+      g.arc(cx, cy, rad, 0, Math.PI * 2);
+      g.stroke();
+    });
+
+    // Parametric morphing polygon path
+    const N = 120;
+    g.beginPath();
+    for (let i = 0; i <= N; i++) {
+      const th = (i / N) * Math.PI * 2 + dt * 0.45;
+      const rTri = baseR * 0.72 * polarTriangleR(th);
+      const rCur = lerp(baseR, rTri, morph);
+      const px = cx + Math.cos(th) * rCur;
+      const py = cy + Math.sin(th) * rCur;
+      if (i === 0) g.moveTo(px, py);
+      else g.lineTo(px, py);
+    }
+    g.closePath();
+    g.fillStyle = 'rgba(217, 119, 87, 0.22)';
+    g.fill();
+    g.lineWidth = 5;
+    g.strokeStyle = C.terracotta;
+    g.stroke();
+
+    // Highlight 3 triangle vertices
+    for (let v = 0; v < 3; v++) {
+      const th = v * (Math.PI * 2 / 3) - Math.PI / 2 + dt * 0.45;
+      const rTri = baseR * 0.72 * polarTriangleR(th);
+      const rCur = lerp(baseR, rTri, morph);
+      const vx = cx + Math.cos(th) * rCur;
+      const vy = cy + Math.sin(th) * rCur;
+      g.fillStyle = C.cream;
+      g.beginPath();
+      g.arc(vx, vy, 8, 0, Math.PI * 2);
+      g.fill();
+    }
+
+    // Formula readout below
+    g.font = '700 24px EditorialMono';
+    g.fillStyle = C.cream;
+    g.textAlign = 'center';
+    g.fillText('r(θ) = triángulo', cx, cy + 285);
+    g.font = '400 19px EditorialMono';
+    g.fillStyle = C.terracottaLight;
+    g.fillText(`morfología continua · u = ${morph.toFixed(2)}`, cx, cy + 322);
+    g.restore();
+
+    // Divider line
+    g.strokeStyle = C.cream;
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(splitX, 0);
+    g.lineTo(splitX, H);
+    g.stroke();
+  }
+}
+
+// ============================================================================
+// SCENE 4 [7.5 - 10.5s]: 3D Dot-Matrix Wave + Live Audio Spectrogram (124 BPM)
+// ============================================================================
+function scene4(t) {
+  const dt = t - 7.5;
+  g.fillStyle = C.charcoal;
+  g.fillRect(0, 0, W, H);
+  drawGrid(C.charcoalGrid, 60, 0, -t * 12);
+  drawHUD(t, true, '04 / CAMPO ESCALAR 3D & AUDIO EN COMPÁS');
+
+  // Title header
+  const pH = spring(dt, 190, 22);
+  g.save();
+  g.translate(W / 2, 145 + (1 - pH) * 28);
+  g.textAlign = 'center';
+  g.font = '400 68px EditorialSerif';
+  g.fillStyle = C.cream;
+  g.fillText('900 cuadros · cada uno = f(t)', 0, 0);
+  g.restore();
+
+  // 3D Dot-Matrix Surface Wave
+  const cols = 26, rows = 13;
+  const pts = [];
+  const rotY = Math.sin(t * 0.55) * 0.28;
+  const rotX = 0.58;
+  const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+  const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const gx = (c - (cols - 1) / 2) * 52;
+      const gz = (r - (rows - 1) / 2) * 52;
+      const dist = Math.hypot(gx, gz) * 0.018;
+      const wave = Math.sin(dist * 3.2 - t * 6.5) * 68 + Math.cos(gx * 0.012 + t * 4.2) * 24;
+      const gy = -wave;
+
+      // Rotate Y then X
+      const x1 = gx * cosY - gz * sinY;
+      const z1 = gx * sinY + gz * cosY;
+      const y2 = gy * cosX - z1 * sinX;
+      const z2 = gy * sinX + z1 * cosX;
+
+      const fov = 1100;
+      const k = fov / (fov + z2 + 420);
+      pts.push({
+        sx: W / 2 + x1 * k,
+        sy: 495 + y2 * k,
+        z: z2,
+        k,
+        norm: clamp((wave + 92) / 184),
+      });
+    }
+  }
+  pts.sort((a, b) => b.z - a.z);
+
+  for (const pt of pts) {
+    const rad = Math.max(2.2, (4.5 + pt.norm * 6.5) * pt.k);
+    g.fillStyle = pt.norm > 0.58 ? C.terracotta : C.cream;
+    g.globalAlpha = clamp(0.28 + pt.norm * 0.72);
+    g.beginPath();
+    g.arc(pt.sx, pt.sy, rad, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.globalAlpha = 1;
+
+  // Live Audio Frequency Spectrogram Bars at bottom (124 BPM beat pulse)
+  const beatPhase = (t * (124 / 60)) % 1;
+  const beatEnv = Math.exp(-beatPhase * 4.5);
+  const nBars = 52;
+  const barW = 20, gap = 8;
+  const totalW = nBars * barW + (nBars - 1) * gap;
+  const x0 = (W - totalW) / 2;
+  const baseY = 985;
+
+  for (let i = 0; i < nBars; i++) {
+    const centerDist = Math.abs(i - (nBars - 1) / 2) / (nBars / 2);
+    const harm = Math.abs(Math.sin(i * 0.42 + t * 9.5)) * 0.65 + Math.abs(Math.cos(i * 0.9 - t * 6.2)) * 0.35;
+    const hBar = 18 + (1 - centerDist * 0.65) * (55 * harm + 68 * beatEnv);
+    rrect(x0 + i * (barW + gap), baseY - hBar, barW, hBar, 6);
+    g.fillStyle = hBar > 78 ? C.terracotta : C.cream;
+    g.fill();
+  }
+
+  g.font = '700 18px EditorialMono';
+  g.fillStyle = C.creamMuted;
+  g.textAlign = 'center';
+  g.fillText('ESPECTROGRAMA DE FRECUENCIA · PULSO MEDIDO A 124 BPM (-14 LUFS)', W / 2, 1028);
+}
+
+// ============================================================================
+// SCENE 5 [10.5 - 13.0s]: Mathematical Graph (cubic-bezier vs spring)
+// ============================================================================
+function cubicEase(u) {
+  const x = clamp(u);
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+}
+
+function scene5(t) {
+  const dt = t - 10.5;
+  g.fillStyle = C.cream;
+  g.fillRect(0, 0, W, H);
+  drawGrid(C.creamGrid, 60, 0, 0);
+  drawHUD(t, false, '05 / CURVAS CERRADAS EN CÓDIGO');
+
+  g.save();
+  g.font = '400 72px EditorialSerif';
+  g.fillStyle = C.charcoal;
+  g.textAlign = 'center';
+  g.fillText('Interpolación clásica vs. Resorte físico', W / 2, 155);
+  g.restore();
+
+  const prog = clamp((dt - 0.15) / 1.85);
+  const cards = [
+    {
+      x: 140, y: 235, w: 780, h: 720,
+      title: 'suave · cubic-bezier',
+      formula: 'y(u) = 3u² - 2u³  (sin sobreimpulso)',
+      accent: C.charcoal,
+      fn: (u) => cubicEase(u),
+    },
+    {
+      x: 1000, y: 235, w: 780, h: 720,
+      title: 'elástico · spring(t)',
+      formula: 'y(t) = 1 - e^(-ζωt)·cos(ω_d·t)  (rebote real)',
+      accent: C.terracotta,
+      fn: (u) => spring(u * 1.4, 210, 15),
+    },
+  ];
+
+  cards.forEach((cd, idx) => {
+    const pCard = spring(dt - idx * 0.1, 190, 22);
+    g.save();
+    g.translate(cd.x + cd.w / 2, cd.y + cd.h / 2 + (1 - pCard) * 40);
+    g.scale(0.94 + 0.06 * pCard, 0.94 + 0.06 * pCard);
+    g.translate(-cd.w / 2, -cd.h / 2);
+
+    rrect(0, 0, cd.w, cd.h, 24);
+    g.fillStyle = idx === 1 ? C.charcoal : '#FFFFFF';
+    g.fill();
+    g.lineWidth = 2.5;
+    g.strokeStyle = idx === 1 ? C.terracotta : C.charcoal;
+    g.stroke();
+
+    const txtCol = idx === 1 ? C.cream : C.charcoal;
+    const subCol = idx === 1 ? C.terracottaLight : C.creamMuted;
+
+    g.textAlign = 'left';
+    g.textBaseline = 'alphabetic';
+    g.font = 'italic 400 50px EditorialSerif';
+    g.fillStyle = txtCol;
+    g.fillText(cd.title, 48, 78);
+
+    g.font = '500 19px EditorialMono';
+    g.fillStyle = subCol;
+    g.fillText(cd.formula, 48, 118);
+
+    // Plot box
+    const gx = 56, gy = 175, gw = 520, gh = 440;
+    g.strokeStyle = idx === 1 ? 'rgba(250,249,245,0.18)' : 'rgba(20,20,19,0.15)';
+    g.lineWidth = 1.5;
+    g.strokeRect(gx, gy, gw, gh);
+
+    // Target line y = 1.0
+    const yTarget = gy + gh * 0.22;
+    const yZero = gy + gh * 0.88;
+    g.setLineDash([6, 6]);
+    g.beginPath();
+    g.moveTo(gx, yTarget);
+    g.lineTo(gx + gw, yTarget);
+    g.stroke();
+    g.setLineDash([]);
+
+    // Draw curve up to prog
+    const steps = 120;
+    const maxStep = Math.max(2, Math.floor(steps * prog));
+    g.beginPath();
+    for (let s = 0; s <= maxStep; s++) {
+      const u = s / steps;
+      const val = cd.fn(u);
+      const px = gx + u * gw;
+      const py = lerp(yZero, yTarget, val);
+      if (s === 0) g.moveTo(px, py);
+      else g.lineTo(px, py);
+    }
+    g.strokeStyle = cd.accent;
+    g.lineWidth = 5;
+    g.stroke();
+
+    // Current value dot & physical preview puck on the right
+    const curVal = cd.fn(prog);
+    const dotX = gx + prog * gw;
+    const dotY = lerp(yZero, yTarget, curVal);
+    g.fillStyle = cd.accent;
+    g.beginPath();
+    g.arc(dotX, dotY, 10, 0, Math.PI * 2);
+    g.fill();
+
+    // Vertical track on the right showing real object motion
+    const trackX = gx + gw + 85;
+    g.strokeStyle = idx === 1 ? 'rgba(250,249,245,0.22)' : 'rgba(20,20,19,0.2)';
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(trackX, yZero);
+    g.lineTo(trackX, yTarget - 40);
+    g.stroke();
+
+    rrect(trackX - 34, dotY - 24, 68, 48, 14);
+    g.fillStyle = cd.accent;
+    g.fill();
+
+    g.font = '700 20px EditorialMono';
+    g.fillStyle = txtCol;
+    g.fillText(`valor = ${curVal.toFixed(3)}`, 56, gy + gh + 54);
+    g.restore();
+  });
+}
+
+// ============================================================================
+// SCENE 6 [13.0 - 15.0s]: 3D Carousel -> Claude Starburst Emblem + Lockup
+// ============================================================================
+function drawClaudeStarburst(cx, cy, radius, rot, scale = 1) {
+  if (scale <= 0.01) return;
+  g.save();
+  g.translate(cx, cy);
+  g.rotate(rot);
+  g.scale(scale, scale);
+  g.strokeStyle = C.terracotta;
+  g.lineWidth = 10;
+  g.lineCap = 'round';
+  const rays = 12;
+  for (let i = 0; i < rays; i++) {
+    const a = (i / rays) * Math.PI * 2;
+    const rIn = radius * 0.24;
+    const rOut = radius * (i % 2 === 0 ? 1.0 : 0.78);
+    g.beginPath();
+    g.moveTo(Math.cos(a) * rIn, Math.sin(a) * rIn);
+    g.lineTo(Math.cos(a) * rOut, Math.sin(a) * rOut);
+    g.stroke();
+  }
+  g.fillStyle = C.terracotta;
+  g.beginPath();
+  g.arc(0, 0, radius * 0.26, 0, Math.PI * 2);
+  g.fill();
+  g.restore();
+}
+
+function scene6(t) {
+  const dt = t - 13.0;
+  g.fillStyle = C.charcoal;
+  g.fillRect(0, 0, W, H);
+  drawGrid(C.charcoalGrid, 60, -t * 10, -t * 8);
+  drawHUD(t, true, '06 / PORTAFOLIO COMPLETO EN 1 ARCHIVO HTML');
+
+  const collapse = clamp((dt - 0.65) / 0.45);
+  const conv = easeInOutCubic(collapse);
+
+  // 3D Cylindrical Carousel of 6 screens collapsing into the center at t = 13.75s
+  if (conv < 0.99) {
+    const nScreens = 6;
+    const labels = ['ZERO KEYFRAMES', 'SQUASH & STRETCH', 'MOVIMIENTO', 'CAMPO 3D f(t)', 'SPRING(t)', '60 FPS PURO'];
+    const items = [];
+    for (let i = 0; i < nScreens; i++) {
+      const ang = (i / nScreens) * Math.PI * 2 + dt * 2.8;
+      const rad = lerp(520, 0, conv);
+      const x3 = Math.sin(ang) * rad;
+      const z3 = Math.cos(ang) * rad;
+      const y3 = Math.sin(ang * 2 + dt * 3) * 35 * (1 - conv);
+      const fov = 1100;
+      const k = fov / (fov + z3 + 420);
+      items.push({ i, x: W / 2 + x3 * k, y: 420 + y3 * k, z: z3, k, label: labels[i] });
+    }
+    items.sort((a, b) => b.z - a.z);
+    for (const it of items) {
+      const sw = 270 * it.k * (1 - conv * 0.6);
+      const sh = 160 * it.k * (1 - conv * 0.6);
+      g.save();
+      g.globalAlpha = (1 - conv) * clamp(0.45 + it.k * 0.55);
+      rrect(it.x - sw / 2, it.y - sh / 2, sw, sh, 16 * it.k);
+      g.fillStyle = it.i % 2 === 0 ? C.charcoalSoft : C.cream;
+      g.fill();
+      g.lineWidth = 2.5;
+      g.strokeStyle = C.terracotta;
+      g.stroke();
+      g.font = `700 ${Math.round(16 * it.k)}px EditorialMono`;
+      g.fillStyle = it.i % 2 === 0 ? C.cream : C.charcoal;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(it.label, it.x, it.y);
+      g.restore();
+    }
+  }
+
+  // Claude Starburst Emblem + Final Portfolio Lockup
+  const pLogo = spring(dt - 0.68, 210, 18);
+  if (pLogo > 0.01) {
+    drawClaudeStarburst(W / 2, 370, 86, dt * 0.45, pLogo);
+
+    g.save();
+    g.globalAlpha = clamp((dt - 0.72) / 0.25);
+    g.translate(W / 2, 575 + (1 - pLogo) * 32);
+    g.textAlign = 'center';
+    g.font = '400 108px EditorialSerif';
+    g.fillStyle = C.cream;
+    g.fillText('Claude · motion designer', 0, 0);
+
+    // Pill badge below
+    const pw = 760, ph = 64;
+    rrect(-pw / 2, 54, pw, ph, 32);
+    g.fillStyle = 'rgba(217, 119, 87, 0.18)';
+    g.fill();
+    g.lineWidth = 2;
+    g.strokeStyle = C.terracotta;
+    g.stroke();
+
+    g.font = '700 24px EditorialMono';
+    g.fillStyle = C.terracottaLight;
+    g.textBaseline = 'middle';
+    g.fillText('15 s   ·   900 cuadros   ·   0 keyframes', 0, 86);
+    g.restore();
+  }
+}
+
+function draw(t) {
+  const ct = clamp(t, 0, DUR);
+  g.globalAlpha = 1;
+  g.textAlign = 'left';
+  g.textBaseline = 'alphabetic';
+  g.setLineDash([]);
+  if (ct < 2.5) scene1(ct);
+  else if (ct < 5.0) scene2(ct);
+  else if (ct < 7.5) scene3(ct);
+  else if (ct < 10.5) scene4(ct);
+  else if (ct < 13.0) scene5(ct);
+  else scene6(ct);
+}
+
+window.seek = (t) => {
+  draw(t);
+};
+window.seek(0);
+</script>

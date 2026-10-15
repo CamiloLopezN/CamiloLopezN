@@ -1,0 +1,19 @@
+{
+  "titulo": "Prueba 6 · El Prompt Maestro en XML (Un Contenedor que Nunca Corta)",
+  "dur": 16.0,
+  "fps": 30,
+  "sub": 4,
+  "poster": 6.4,
+  "formatos": [
+    {
+      "nombre": "16x9",
+      "w": 1920,
+      "h": 1080
+    },
+    {
+      "nombre": "9x16",
+      "w": 1080,
+      "h": 1920
+    }
+  ]
+}

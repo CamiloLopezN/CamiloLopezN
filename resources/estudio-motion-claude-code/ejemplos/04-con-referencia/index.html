@@ -1,0 +1,546 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #F7F6F3; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; }
+</style>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script type="module">
+const W = 1920, H = 1080;
+const DUR = 15.0;
+const canvas = document.getElementById('c');
+const g = canvas.getContext('2d');
+
+const fontDefs = [
+  ['EditorialSerif', '../../../../../../shared/fonts/NotoSerifDisplay-Regular.ttf', { weight: '400', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-500.woff2', { weight: '500', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-600.woff2', { weight: '600', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-700.woff2', { weight: '700', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-800.woff2', { weight: '800', style: 'normal' }],
+  ['EditorialMono', '../../../../../../shared/fonts/DejaVuSansMono.ttf', { weight: '400', style: 'normal' }],
+  ['EditorialMono', '../../../../../../shared/fonts/DejaVuSansMono-Bold.ttf', { weight: '700', style: 'normal' }],
+];
+await Promise.all(fontDefs.map(async ([name, url, desc]) => {
+  try {
+    const ff = new FontFace(name, `url(${url})`, desc);
+    await ff.load();
+    document.fonts.add(ff);
+  } catch (e) {}
+}));
+
+// Preload real Notion screenshots
+const imgs = {};
+await Promise.all([
+  ['hero', 'assets/notion-hero.png'],
+  ['ui1', 'assets/notion-ui-1.png'],
+  ['ui2', 'assets/notion-ui-2.png'],
+].map(([k, src]) => new Promise((resolve) => {
+  const im = new Image();
+  im.onload = () => { imgs[k] = im; resolve(); };
+  im.onerror = () => resolve();
+  im.src = src;
+})));
+
+// Monochrome Editorial Silver/White + Notion Blue (ZERO terracotta!)
+const N = {
+  bg: '#F7F6F3',
+  card: '#FFFFFF',
+  border: '#E5E4DF',
+  ink: '#111111',
+  muted: '#787774',
+  blue: '#2383E2',
+  blueSoft: '#E8F3FC',
+  green: '#0F7B6C',
+  greenSoft: '#DBEDDB',
+};
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, u) => a + (b - a) * u;
+const easeOutCubic = (u) => 1 - Math.pow(1 - clamp(u), 3);
+
+function spring(dt, k = 200, c = 24) {
+  if (dt <= 0) return 0;
+  const w0 = Math.sqrt(k);
+  const zeta = c / (2 * w0);
+  if (zeta < 1) {
+    const wd = w0 * Math.sqrt(1 - zeta * zeta);
+    return 1 - Math.exp(-zeta * w0 * dt) * (Math.cos(wd * dt) + (zeta * w0 / wd) * Math.sin(wd * dt));
+  }
+  return 1 - (1 + w0 * dt) * Math.exp(-w0 * dt);
+}
+
+function rrect(x, y, w, h, r) {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  g.beginPath();
+  g.moveTo(x + rr, y);
+  g.arcTo(x + w, y, x + w, y + h, rr);
+  g.arcTo(x + w, y + h, x, y + h, rr);
+  g.arcTo(x, y + h, x, y, rr);
+  g.arcTo(x, y, x + w, y, rr);
+  g.closePath();
+}
+
+function drawNotionCube(cx, cy, size, tilt = 0) {
+  g.save();
+  g.translate(cx, cy);
+  g.rotate(tilt);
+  const s = size;
+  // Shadow
+  g.shadowColor = 'rgba(17, 17, 17, 0.12)';
+  g.shadowBlur = 28;
+  g.shadowOffsetY = 12;
+  rrect(-s / 2, -s / 2, s, s, s * 0.2);
+  g.fillStyle = '#FFFFFF';
+  g.fill();
+  g.shadowColor = 'transparent';
+
+  rrect(-s / 2, -s / 2, s, s, s * 0.2);
+  g.lineWidth = Math.max(2, s * 0.045);
+  g.strokeStyle = N.ink;
+  g.stroke();
+
+  // Inner Notion isometric cube lines + 'N'
+  const b = s * 0.31;
+  g.strokeRect(-b, -b * 0.78, b * 2, b * 1.68);
+  g.font = `700 ${Math.round(s * 0.48)}px EditorialSerif`;
+  g.fillStyle = N.ink;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('N', 0, s * 0.04);
+  g.restore();
+}
+
+function drawCursor(x, y, scale = 1, clicking = false) {
+  g.save();
+  g.translate(x, y);
+  const sc = scale * (clicking ? 0.86 : 1);
+  g.scale(sc, sc);
+  if (clicking) {
+    g.strokeStyle = 'rgba(35, 131, 226, 0.45)';
+    g.lineWidth = 3;
+    g.beginPath();
+    g.arc(0, 0, 26, 0, Math.PI * 2);
+    g.stroke();
+  }
+  g.shadowColor = 'rgba(17,17,17,0.22)';
+  g.shadowBlur = 12;
+  g.shadowOffsetY = 4;
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.lineTo(0, 32);
+  g.lineTo(9, 24);
+  g.lineTo(16, 38);
+  g.lineTo(22, 35);
+  g.lineTo(15, 21);
+  g.lineTo(26, 21);
+  g.closePath();
+  g.fillStyle = N.ink;
+  g.fill();
+  g.lineWidth = 2.2;
+  g.strokeStyle = '#FFFFFF';
+  g.stroke();
+  g.restore();
+}
+
+function drawSubtleGrid(t) {
+  g.fillStyle = N.bg;
+  g.fillRect(0, 0, W, H);
+  g.save();
+  g.strokeStyle = 'rgba(17, 17, 17, 0.038)';
+  g.lineWidth = 1;
+  const step = 80;
+  for (let x = 0; x <= W; x += step) {
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+  }
+  for (let y = 0; y <= H; y += step) {
+    g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+  }
+  g.restore();
+}
+
+// ============================================================================
+// SCENE 1 [0.0 - 3.5s]: 3D Notion Cube + "Donde equipos y agentes piensan juntos."
+// ============================================================================
+function scene1(t) {
+  const pCube = spring(t - 0.1, 190, 20);
+  const floatY = Math.sin(t * 2.6) * 8;
+  drawNotionCube(W / 2, 235 + (1 - pCube) * 50 + floatY, 108 * pCube, Math.sin(t * 1.8) * 0.04);
+
+  // Line 1: "Donde equipos y"
+  const p1 = spring(t - 0.35, 210, 24);
+  g.save();
+  g.globalAlpha = clamp((t - 0.35) / 0.22);
+  g.font = '800 96px EditorialSans';
+  g.fillStyle = N.ink;
+  g.textAlign = 'center';
+  g.fillText('Donde equipos y', W / 2, 435 + (1 - p1) * 36);
+  g.restore();
+
+  // Line 2: "agentes" + Blue Pill "● piensan" + "juntos."
+  const p2 = spring(t - 0.65, 210, 24);
+  if (p2 > 0.01) {
+    g.save();
+    g.globalAlpha = clamp((t - 0.65) / 0.22);
+    const y2 = 555 + (1 - p2) * 36;
+    g.font = '800 96px EditorialSans';
+    g.fillStyle = N.ink;
+    g.textAlign = 'left';
+    g.fillText('agentes', 235, y2);
+
+    // Blue Pill "● piensan"
+    const pPill = spring(t - 0.95, 220, 20);
+    const pillX = 635, pillY = y2 - 84, pillW = 445 * pPill, pillH = 108;
+    rrect(pillX, pillY, pillW, pillH, 54);
+    g.fillStyle = N.blueSoft;
+    g.fill();
+    g.lineWidth = 2;
+    g.strokeStyle = 'rgba(35, 131, 226, 0.28)';
+    g.stroke();
+
+    if (pPill > 0.35) {
+      g.save();
+      rrect(pillX, pillY, pillW, pillH, 54);
+      g.clip();
+      g.fillStyle = N.blue;
+      g.beginPath();
+      g.arc(pillX + 54, pillY + pillH / 2, 16, 0, Math.PI * 2);
+      g.fill();
+      g.font = '700 82px EditorialSans';
+      g.fillStyle = N.ink;
+      g.fillText('piensan', pillX + 90, y2 - 4);
+      g.restore();
+    }
+
+    g.font = '800 96px EditorialSans';
+    g.fillStyle = N.ink;
+    g.fillText('juntos.', 1105, y2);
+    g.restore();
+  }
+
+  // Subheadline + Preview of real Notion Hero UI rising at bottom
+  const p3 = spring(t - 1.35, 190, 24);
+  if (p3 > 0.01) {
+    g.save();
+    g.globalAlpha = clamp((t - 1.35) / 0.25);
+    g.font = '500 28px EditorialSans';
+    g.fillStyle = N.muted;
+    g.textAlign = 'center';
+    g.fillText('Captura contexto, encuentra respuestas y automatiza tareas con IA en tu equipo.', W / 2, 650 + (1 - p3) * 24);
+
+    // Real Notion workspace card peeking up from bottom
+    const cw = 1280, ch = 520;
+    const cx = (W - cw) / 2, cy = 715 + (1 - p3) * 160;
+    g.shadowColor = 'rgba(17, 17, 17, 0.12)';
+    g.shadowBlur = 42;
+    g.shadowOffsetY = 18;
+    rrect(cx, cy, cw, ch, 20);
+    g.fillStyle = '#FFFFFF';
+    g.fill();
+    g.shadowColor = 'transparent';
+
+    if (imgs.hero) {
+      g.save();
+      rrect(cx, cy, cw, ch, 20);
+      g.clip();
+      // Crop the Ramp HQ workspace section from notion-hero.png
+      g.drawImage(imgs.hero, 320, 510, 1280, 540, cx, cy, cw, ch);
+      g.restore();
+    }
+    rrect(cx, cy, cw, ch, 20);
+    g.lineWidth = 1.5;
+    g.strokeStyle = N.border;
+    g.stroke();
+    g.restore();
+  }
+}
+
+// ============================================================================
+// SCENE 2 [3.5 - 8.5s]: Real Notion Engineering Board + "Agente de código"
+// ============================================================================
+function scene2(t) {
+  const dt = t - 3.5;
+  const pIn = spring(dt, 180, 23);
+
+  // Camera pan & zoom into the Engineering Board & Coding Agent
+  const camZoom = lerp(1.0, 1.16, easeOutCubic(clamp((dt - 1.1) / 3.2)));
+  const camX = lerp(0, -110, easeOutCubic(clamp((dt - 1.1) / 3.2)));
+  const camY = lerp(0, -45, easeOutCubic(clamp((dt - 1.1) / 3.2)));
+
+  g.save();
+  g.translate(W / 2 + camX, H / 2 + camY);
+  g.scale(camZoom * (0.94 + 0.06 * pIn), camZoom * (0.94 + 0.06 * pIn));
+  g.translate(-W / 2, -H / 2);
+
+  // Top editorial bar
+  g.font = '700 18px EditorialMono';
+  g.fillStyle = N.blue;
+  g.fillText('● NOTION WORKSPACE · TABLERO EN VIVO', 140, 92);
+
+  g.font = '700 44px EditorialSans';
+  g.fillStyle = N.ink;
+  g.fillText('Tareas de ingeniería  ·  Agente de código activo', 140, 148);
+
+  // Main real Notion board frame (using notion-ui-1.png)
+  const bx = 140, by = 185, bw = 1640, bh = 810;
+  g.shadowColor = 'rgba(17, 17, 17, 0.10)';
+  g.shadowBlur = 44;
+  g.shadowOffsetY = 18;
+  rrect(bx, by, bw, bh, 22);
+  g.fillStyle = '#FFFFFF';
+  g.fill();
+  g.shadowColor = 'transparent';
+
+  if (imgs.ui1) {
+    g.save();
+    rrect(bx, by, bw, bh, 22);
+    g.clip();
+    g.drawImage(imgs.ui1, 280, 50, 1360, 560, bx, by, bw, bh);
+    g.restore();
+  }
+  rrect(bx, by, bw, bh, 22);
+  g.lineWidth = 2;
+  g.strokeStyle = N.border;
+  g.stroke();
+
+  // Animated Task Card picked up by "Agente de código" and moved from "To-do" to "In progress"
+  const dragP = spring(dt - 1.4, 150, 21);
+  const cardX = lerp(495, 835, dragP);
+  const cardY = lerp(420, 365, dragP) - Math.sin(clamp(dragP) * Math.PI) * 28;
+  const cardRot = Math.sin(clamp(dragP) * Math.PI) * 0.035;
+
+  g.save();
+  g.translate(cardX + 165, cardY + 62);
+  g.rotate(cardRot);
+  g.scale(1 + 0.05 * Math.sin(clamp(dragP) * Math.PI), 1 + 0.05 * Math.sin(clamp(dragP) * Math.PI));
+  g.shadowColor = 'rgba(35, 131, 226, 0.22)';
+  g.shadowBlur = 32;
+  g.shadowOffsetY = 14;
+  rrect(-165, -62, 330, 124, 14);
+  g.fillStyle = '#FFFFFF';
+  g.fill();
+  g.shadowColor = 'transparent';
+  g.lineWidth = 2.5;
+  g.strokeStyle = N.blue;
+  g.stroke();
+
+  // Card content
+  rrect(-145, -44, 150, 26, 13);
+  g.fillStyle = dragP > 0.6 ? N.greenSoft : N.blueSoft;
+  g.fill();
+  g.font = '700 13px EditorialSans';
+  g.fillStyle = dragP > 0.6 ? N.green : N.blue;
+  g.fillText(dragP > 0.6 ? '✓ EN PROGRESO' : '● ASIGNANDO IA', -132, -26);
+
+  g.font = '700 19px EditorialSans';
+  g.fillStyle = N.ink;
+  g.fillText('Actualizar servicio Auth OAuth', -145, 10);
+  g.font = '500 15px EditorialSans';
+  g.fillStyle = N.muted;
+  g.fillText('Agente de código · PR #418 listo', -145, 38);
+  g.restore();
+
+  // Floating "Agente de código" modal callout on bottom-right
+  const pAgent = spring(dt - 0.8, 190, 22);
+  if (pAgent > 0.01) {
+    const ax = 1170, ay = 610 + (1 - pAgent) * 40, aw = 540, ah = 290;
+    g.save();
+    g.shadowColor = 'rgba(17, 17, 17, 0.16)';
+    g.shadowBlur = 40;
+    g.shadowOffsetY = 16;
+    rrect(ax, ay, aw, ah, 20);
+    g.fillStyle = '#FFFFFF';
+    g.fill();
+    g.shadowColor = 'transparent';
+    g.lineWidth = 2;
+    g.strokeStyle = N.ink;
+    g.stroke();
+
+    // Header badge
+    rrect(ax + 28, ay + 26, 210, 34, 17);
+    g.fillStyle = N.blueSoft;
+    g.fill();
+    g.font = '700 15px EditorialMono';
+    g.fillStyle = N.blue;
+    g.fillText('● AGENTE DE CÓDIGO', ax + 44, ay + 48);
+
+    g.font = '700 28px EditorialSans';
+    g.fillStyle = N.ink;
+    g.fillText('Automatiza tareas 24/7', ax + 28, ay + 102);
+
+    g.font = '500 19px EditorialSans';
+    g.fillStyle = N.muted;
+    g.fillText('«Revisando Tareas de ingeniería y abriendo', ax + 28, ay + 144);
+    g.fillText('el Pull Request con pruebas verificadas.»', ax + 28, ay + 172);
+
+    // Progress bar inside agent card
+    const barP = clamp((dt - 1.2) / 2.4);
+    rrect(ax + 28, ay + 212, aw - 56, 42, 10);
+    g.fillStyle = N.bg;
+    g.fill();
+    rrect(ax + 28, ay + 212, (aw - 56) * easeOutCubic(barP), 42, 10);
+    g.fillStyle = N.blue;
+    g.fill();
+
+    g.font = '700 16px EditorialMono';
+    g.fillStyle = barP > 0.45 ? '#FFFFFF' : N.ink;
+    g.fillText(`EJECUTANDO FLUJO · ${Math.round(barP * 100)}% COMPLETADO`, ax + 48, ay + 239);
+    g.restore();
+  }
+
+  // Animated cursor guiding the action
+  const curX = lerp(640, 980, dragP);
+  const curY = lerp(490, 435, dragP);
+  drawCursor(curX, curY, 1.1, dt > 1.35 && dt < 2.1);
+
+  g.restore();
+}
+
+// ============================================================================
+// SCENE 3 [8.5 - 12.0s]: Split Editorial Card "IA donde tu equipo trabaja."
+// ============================================================================
+function scene3(t) {
+  const dt = t - 8.5;
+  const pHead = spring(dt, 200, 23);
+
+  g.save();
+  g.translate(140, 125 + (1 - pHead) * 30);
+  g.font = '800 68px EditorialSans';
+  g.fillStyle = N.ink;
+  g.fillText('IA donde tu equipo trabaja.', 0, 0);
+  g.restore();
+
+  // Two split editorial cards from notion-ui-2.png (Left: Meetings, Right: Deal Flow Dashboard + Query)
+  const cards = [
+    {
+      x: 140, y: 185, w: 790, h: 790,
+      tag: 'CAPTURA CONOCIMIENTO',
+      title: 'Todo tu contexto en un solo sistema.',
+      sx: 350, sy: 355, sw: 590, sh: 470,
+      t0: 0.1,
+    },
+    {
+      x: 990, y: 185, w: 790, h: 790,
+      tag: 'ENCUENTRA RESPUESTAS',
+      title: 'Respuestas al instante — con citas.',
+      sx: 985, sy: 355, sw: 590, sh: 470,
+      t0: 0.25,
+    },
+  ];
+
+  cards.forEach((c, idx) => {
+    const p = spring(dt - c.t0, 190, 22);
+    if (p <= 0.01) return;
+    const cy = c.y + (1 - p) * 45;
+    g.save();
+    g.shadowColor = 'rgba(17, 17, 17, 0.08)';
+    g.shadowBlur = 36;
+    g.shadowOffsetY = 14;
+    rrect(c.x, cy, c.w, c.h, 24);
+    g.fillStyle = '#FFFFFF';
+    g.fill();
+    g.shadowColor = 'transparent';
+    g.lineWidth = 2;
+    g.strokeStyle = idx === 1 && dt > 1.4 ? N.blue : N.border;
+    g.stroke();
+
+    g.font = '700 16px EditorialMono';
+    g.fillStyle = N.blue;
+    g.fillText(c.tag, c.x + 42, cy + 54);
+
+    g.font = '700 32px EditorialSans';
+    g.fillStyle = N.ink;
+    g.fillText(c.title, c.x + 42, cy + 100);
+
+    // Real UI crop from notion-ui-2.png
+    const ix = c.x + 36, iy = cy + 135, iw = c.w - 72, ih = 615;
+    if (imgs.ui2) {
+      g.save();
+      rrect(ix, iy, iw, ih, 16);
+      g.clip();
+      g.drawImage(imgs.ui2, c.sx, c.sy, c.sw, c.sh, ix, iy, iw, ih);
+      g.restore();
+    }
+    rrect(ix, iy, iw, ih, 16);
+    g.lineWidth = 1.5;
+    g.strokeStyle = N.border;
+    g.stroke();
+    g.restore();
+  });
+
+  // Live cursor clicking the query button on the right card at dt = 1.6s
+  const curP = easeOutCubic(clamp((dt - 0.5) / 1.1));
+  const cx = lerp(760, 1628, curP);
+  const cy = lerp(640, 848, curP);
+
+  // Instant citation popover appearing at dt = 1.65s
+  if (dt > 1.65) {
+    const pPop = spring(dt - 1.65, 220, 20);
+    const px = 1045, py = 655 + (1 - pPop) * 24, pw = 680, ph = 128;
+    g.save();
+    g.shadowColor = 'rgba(35, 131, 226, 0.22)';
+    g.shadowBlur = 32;
+    g.shadowOffsetY = 12;
+    rrect(px, py, pw, ph, 16);
+    g.fillStyle = N.ink;
+    g.fill();
+    g.shadowColor = 'transparent';
+
+    g.font = '700 15px EditorialMono';
+    g.fillStyle = '#68B5FF';
+    g.fillText('✓ RESPUESTA VERIFICADA · FUENTE: Q3_ROADMAP.MD', px + 28, py + 42);
+
+    g.font = '600 19px EditorialSans';
+    g.fillStyle = '#FFFFFF';
+    g.fillText('«Prioridad #1 en H2: Lanzamiento de Agentes Enterprise (+42% ARR).»', px + 28, py + 86);
+    g.restore();
+  }
+
+  drawCursor(cx, cy, 1.15, dt > 1.5 && dt < 1.85);
+}
+
+// ============================================================================
+// SCENE 4 [12.0 - 15.0s]: Clean Notion Logo Lockup + notion.com
+// ============================================================================
+function scene4(t) {
+  const dt = t - 12.0;
+  const pLogo = spring(dt, 190, 20);
+
+  drawNotionCube(W / 2, 395 + (1 - pLogo) * 40, 148 * pLogo, 0);
+
+  g.save();
+  g.globalAlpha = clamp((dt - 0.15) / 0.25);
+  g.translate(W / 2, 575 + (1 - pLogo) * 28);
+  g.textAlign = 'center';
+  g.font = '800 84px EditorialSans';
+  g.fillStyle = N.ink;
+  g.fillText('Notion', 0, 0);
+
+  const pPill = spring(dt - 0.35, 210, 22);
+  const pw = 360 * pPill, ph = 68;
+  rrect(-pw / 2, 42, pw, ph, 34);
+  g.fillStyle = N.blue;
+  g.fill();
+
+  if (pPill > 0.4) {
+    g.font = '700 28px EditorialSans';
+    g.fillStyle = '#FFFFFF';
+    g.textBaseline = 'middle';
+    g.fillText('notion.com', 0, 76);
+  }
+  g.restore();
+}
+
+function draw(t) {
+  const ct = clamp(t, 0, DUR);
+  drawSubtleGrid(ct);
+  if (ct < 3.5) scene1(ct);
+  else if (ct < 8.5) scene2(ct);
+  else if (ct < 12.0) scene3(ct);
+  else scene4(ct);
+}
+
+window.seek = (t) => {
+  draw(t);
+};
+window.seek(0);
+</script>

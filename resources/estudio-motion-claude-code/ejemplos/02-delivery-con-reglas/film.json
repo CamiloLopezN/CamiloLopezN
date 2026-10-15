@@ -1,0 +1,14 @@
+{
+  "titulo": "Demo 02 · Delivery con Reglas (CLAUDE.md · Nota 8.7)",
+  "dur": 10,
+  "fps": 30,
+  "sub": 4,
+  "poster": 5.3,
+  "formatos": [
+    {
+      "nombre": "16x9",
+      "w": 1920,
+      "h": 1080
+    }
+  ]
+}

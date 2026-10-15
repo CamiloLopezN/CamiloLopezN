@@ -1,0 +1,720 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #FFFFFF; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; }
+</style>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script type="module">
+const W = 1920, H = 1080;
+const DUR = 20.0;
+const canvas = document.getElementById('c');
+const g = canvas.getContext('2d');
+
+const fontDefs = [
+  ['EditorialSerif', '../../../../../../shared/fonts/NotoSerifDisplay-Regular.ttf', { weight: '400', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-500.woff2', { weight: '500', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-600.woff2', { weight: '600', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-700.woff2', { weight: '700', style: 'normal' }],
+  ['EditorialSans', '../../../../../../shared/fonts/Inter-800.woff2', { weight: '800', style: 'normal' }],
+  ['EditorialMono', '../../../../../../shared/fonts/DejaVuSansMono.ttf', { weight: '400', style: 'normal' }],
+  ['EditorialMono', '../../../../../../shared/fonts/DejaVuSansMono-Bold.ttf', { weight: '700', style: 'normal' }],
+];
+await Promise.all(fontDefs.map(async ([name, url, desc]) => {
+  try {
+    const ff = new FontFace(name, `url(${url})`, desc);
+    await ff.load();
+    document.fonts.add(ff);
+  } catch (e) {}
+}));
+
+// Load real Playwright screenshots of Notion
+const imgs = {};
+await Promise.all([
+  ['hero', 'assets/notion-hero.png'],
+  ['ui1', 'assets/notion-ui-1.png'],
+  ['ui2', 'assets/notion-ui-2.png'],
+].map(([k, src]) => new Promise((resolve) => {
+  const im = new Image();
+  im.onload = () => { imgs[k] = im; resolve(); };
+  im.onerror = () => resolve();
+  im.src = src;
+})));
+
+const B = {
+  white: '#FFFFFF',
+  paper: '#F7F6F3',
+  dark: '#111111',
+  darkCard: '#1B1B1B',
+  border: '#E5E4DF',
+  muted: '#787774',
+  blue: '#2383E2',
+  blueSoft: '#E8F3FC',
+  green: '#0F7B6C',
+  greenSoft: '#DBEDDB',
+};
+
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, u) => a + (b - a) * u;
+const easeOutCubic = (u) => 1 - Math.pow(1 - clamp(u), 3);
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function() {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function spring(dt, k = 200, c = 23) {
+  if (dt <= 0) return 0;
+  const w0 = Math.sqrt(k);
+  const zeta = c / (2 * w0);
+  if (zeta < 1) {
+    const wd = w0 * Math.sqrt(1 - zeta * zeta);
+    return 1 - Math.exp(-zeta * w0 * dt) * (Math.cos(wd * dt) + (zeta * w0 / wd) * Math.sin(wd * dt));
+  }
+  return 1 - (1 + w0 * dt) * Math.exp(-w0 * dt);
+}
+
+function rrect(x, y, w, h, r) {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  g.beginPath();
+  g.moveTo(x + rr, y);
+  g.arcTo(x + w, y, x + w, y + h, rr);
+  g.arcTo(x + w, y + h, x, y + h, rr);
+  g.arcTo(x, y + h, x, y, rr);
+  g.arcTo(x, y, x + w, y, rr);
+  g.closePath();
+}
+
+function drawNotionCube(cx, cy, size, dark = false) {
+  g.save();
+  g.translate(cx, cy);
+  const s = size;
+  g.shadowColor = 'rgba(17, 17, 17, 0.14)';
+  g.shadowBlur = 28;
+  g.shadowOffsetY = 12;
+  rrect(-s / 2, -s / 2, s, s, s * 0.2);
+  g.fillStyle = dark ? B.dark : '#FFFFFF';
+  g.fill();
+  g.shadowColor = 'transparent';
+
+  rrect(-s / 2, -s / 2, s, s, s * 0.2);
+  g.lineWidth = Math.max(2, s * 0.045);
+  g.strokeStyle = dark ? '#FFFFFF' : B.dark;
+  g.stroke();
+
+  const b = s * 0.31;
+  g.strokeRect(-b, -b * 0.78, b * 2, b * 1.68);
+  g.font = `700 ${Math.round(s * 0.48)}px EditorialSerif`;
+  g.fillStyle = dark ? '#FFFFFF' : B.dark;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('N', 0, s * 0.04);
+  g.restore();
+}
+
+function drawCursor(x, y, scale = 1, clicking = false) {
+  g.save();
+  g.translate(x, y);
+  const sc = scale * (clicking ? 0.85 : 1);
+  g.scale(sc, sc);
+  if (clicking) {
+    g.strokeStyle = 'rgba(35, 131, 226, 0.55)';
+    g.lineWidth = 3.5;
+    g.beginPath();
+    g.arc(0, 0, 28, 0, Math.PI * 2);
+    g.stroke();
+  }
+  g.shadowColor = 'rgba(17,17,17,0.24)';
+  g.shadowBlur = 12;
+  g.shadowOffsetY = 4;
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.lineTo(0, 32);
+  g.lineTo(9, 24);
+  g.lineTo(16, 38);
+  g.lineTo(22, 35);
+  g.lineTo(15, 21);
+  g.lineTo(26, 21);
+  g.closePath();
+  g.fillStyle = B.dark;
+  g.fill();
+  g.lineWidth = 2.2;
+  g.strokeStyle = '#FFFFFF';
+  g.stroke();
+  g.restore();
+}
+
+// Precompute browser tab shards for Act 1 shatter
+const TAB_SHARDS = (() => {
+  const rand = mulberry32(55);
+  const arr = [];
+  for (let i = 0; i < 64; i++) {
+    const x0 = 260 + rand() * 1400;
+    const y0 = 220 + rand() * 640;
+    const ang = Math.atan2(y0 - 540, x0 - 960) + (rand() - 0.5) * 0.7;
+    const spd = 420 + rand() * 880;
+    arr.push({
+      x0, y0,
+      vx: Math.cos(ang) * spd,
+      vy: Math.sin(ang) * spd - 120,
+      grav: 520 + rand() * 340,
+      w: 24 + rand() * 64,
+      h: 12 + rand() * 26,
+      rot0: (rand() - 0.5) * 0.5,
+      vrot: (rand() - 0.5) * 10,
+      blue: rand() < 0.25,
+    });
+  }
+  return arr;
+})();
+
+// ============================================================================
+// ACTO 1 [0.0 - 4.0s]: "Mil pestañas abiertas." -> Dark Invert "Ninguna respuesta."
+// ============================================================================
+function acto1(t) {
+  if (t < 1.95) {
+    g.fillStyle = B.white;
+    g.fillRect(0, 0, W, H);
+
+    // Floating chaotic browser tabs behind the huge kinetic type
+    const tabLabels = ['Docs · Q3', 'Jira #412', 'Slack #eng', 'Wiki vieja', 'Drive / Spec', 'Notas reunión', 'Notion?', 'Hoja cálculo'];
+    tabLabels.forEach((lbl, i) => {
+      const dtTab = t - (0.08 + i * 0.09);
+      if (dtTab <= 0) return;
+      const p = spring(dtTab, 210, 20);
+      const tx = 180 + (i % 4) * 410 + (i > 3 ? 45 : -25);
+      const ty = (i < 4 ? 160 : 790) + (1 - p) * 40;
+      g.save();
+      g.globalAlpha = 0.75 * clamp(dtTab / 0.15);
+      rrect(tx, ty, 270, 52, 12);
+      g.fillStyle = B.paper;
+      g.fill();
+      g.lineWidth = 1.5;
+      g.strokeStyle = B.border;
+      g.stroke();
+      g.font = '600 17px EditorialMono';
+      g.fillStyle = B.muted;
+      g.fillText(`✕  ${lbl}`, tx + 22, ty + 32);
+      g.restore();
+    });
+
+    // Huge kinetic type: "Mil pestañas abiertas."
+    const words = [
+      { txt: 'Mil', t0: 0.10, x: 960, y: 420 },
+      { txt: 'pestañas', t0: 0.28, x: 610, y: 575 },
+      { txt: 'abiertas.', t0: 0.48, x: 1290, y: 575, blue: true },
+    ];
+    words.forEach((w) => {
+      const dt = t - w.t0;
+      if (dt <= 0) return;
+      const p = spring(dt, 230, 21);
+      g.save();
+      g.translate(w.x, w.y + (1 - p) * 55);
+      g.scale(0.88 + 0.12 * p, 0.88 + 0.12 * p);
+      g.font = '800 132px EditorialSans';
+      g.fillStyle = w.blue ? B.blue : B.dark;
+      g.textAlign = 'center';
+      g.fillText(w.txt, 0, 0);
+      g.restore();
+    });
+  } else {
+    // Dark Invert at t = 1.95s: Shatter shards + "Ninguna respuesta."
+    const dt = t - 1.95;
+    g.fillStyle = B.dark;
+    g.fillRect(0, 0, W, H);
+
+    // Disintegrating shards from the white screen
+    for (const sh of TAB_SHARDS) {
+      const sx = sh.x0 + sh.vx * dt;
+      const sy = sh.y0 + sh.vy * dt + 0.5 * sh.grav * dt * dt;
+      const a = clamp(1 - dt / 1.15);
+      if (a <= 0.01) continue;
+      g.save();
+      g.globalAlpha = a * 0.85;
+      g.translate(sx, sy);
+      g.rotate(sh.rot0 + sh.vrot * dt);
+      rrect(-sh.w / 2, -sh.h / 2, sh.w, sh.h, 4);
+      g.fillStyle = sh.blue ? B.blue : '#FFFFFF';
+      g.fill();
+      g.restore();
+    }
+
+    const p1 = spring(dt - 0.08, 230, 20);
+    const p2 = spring(dt - 0.28, 230, 20);
+    g.save();
+    g.textAlign = 'center';
+    g.font = '800 136px EditorialSans';
+    g.fillStyle = '#FFFFFF';
+    g.fillText('Ninguna', W / 2, 475 + (1 - p1) * 50);
+
+    if (dt > 0.25) {
+      g.fillStyle = B.blue;
+      g.fillText('respuesta.', W / 2, 625 + (1 - p2) * 50);
+    }
+    g.restore();
+  }
+}
+
+// ============================================================================
+// ACTO 2 [4.0 - 8.0s]: Real Notion Workspace ("Lumi Labs HQ") Assembling Piece by Piece
+// ============================================================================
+function acto2(t) {
+  const dt = t - 4.0;
+  g.fillStyle = B.paper;
+  g.fillRect(0, 0, W, H);
+
+  // Header label
+  const pTop = spring(dt, 200, 22);
+  g.save();
+  g.translate(W / 2, 95 + (1 - pTop) * 28);
+  g.textAlign = 'center';
+  g.font = '700 18px EditorialMono';
+  g.fillStyle = B.blue;
+  g.fillText('ACTO 02 · INTERFAZ REAL EXTRAÍDA CON PLAYWRIGHT', 0, 0);
+  g.font = '800 52px EditorialSans';
+  g.fillStyle = B.dark;
+  g.fillText('Un solo lugar. Todo conectado.', 0, 54);
+  g.restore();
+
+  // Workspace container shell assembling piece by piece:
+  // Piece 1 (dt > 0.15): Main frame & top bar
+  const pShell = spring(dt - 0.15, 180, 22);
+  const wx = 150, wy = 185 + (1 - pShell) * 70, ww = 1620, wh = 815;
+  g.save();
+  g.shadowColor = 'rgba(17, 17, 17, 0.12)';
+  g.shadowBlur = 44;
+  g.shadowOffsetY = 18;
+  rrect(wx, wy, ww, wh, 22);
+  g.fillStyle = '#FFFFFF';
+  g.fill();
+  g.shadowColor = 'transparent';
+  g.lineWidth = 2;
+  g.strokeStyle = B.border;
+  g.stroke();
+
+  rrect(wx, wy, ww, wh, 22);
+  g.clip();
+
+  // Piece 2 (dt > 0.45): Left Sidebar sliding in from left (cropped from notion-hero.png)
+  const pSide = spring(dt - 0.45, 190, 22);
+  if (pSide > 0.01 && imgs.hero) {
+    const sw = 320;
+    const sx = wx - (1 - pSide) * 320;
+    g.drawImage(imgs.hero, 336, 492, 232, 588, sx, wy, sw, wh);
+    g.strokeStyle = B.border;
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.moveTo(sx + sw, wy);
+    g.lineTo(sx + sw, wy + wh);
+    g.stroke();
+  }
+
+  // Piece 3 (dt > 0.80): Workspace Header "Lumi Labs HQ"
+  const pHdr = spring(dt - 0.80, 200, 22);
+  if (pHdr > 0.01) {
+    const hx = wx + 365, hy = wy + 45 + (1 - pHdr) * 35;
+    drawNotionCube(hx + 38, hy + 38, 72, true);
+    g.font = '800 54px EditorialSans';
+    g.fillStyle = B.dark;
+    g.fillText('Lumi Labs HQ', hx + 96, hy + 56);
+
+    // Filter tabs pill row
+    const tabs = ['⊞ Tareas de equipo', '◎ Sprint actual', '⚡ Agentes IA (4)', '📅 Línea de tiempo'];
+    tabs.forEach((tb, idx) => {
+      const tx = hx + idx * 265, ty = hy + 96;
+      rrect(tx, ty, 248, 40, 20);
+      g.fillStyle = idx === 0 ? B.dark : B.paper;
+      g.fill();
+      g.font = '600 17px EditorialSans';
+      g.fillStyle = idx === 0 ? '#FFFFFF' : B.muted;
+      g.fillText(tb, tx + 20, ty + 26);
+    });
+  }
+
+  // Piece 4 (dt > 1.15): 4 Kanban Columns popping in sequentially from real notion-ui-1.png
+  const cols = [0, 1, 2, 3];
+  cols.forEach((cIdx) => {
+    const dtCol = dt - (1.15 + cIdx * 0.18);
+    if (dtCol <= 0 || !imgs.ui1) return;
+    const pCol = spring(dtCol, 200, 21);
+    const colW = 295, colH = 560;
+    const cx = wx + 365 + cIdx * 305;
+    const cy = wy + 225 + (1 - pCol) * 85;
+    g.save();
+    g.globalAlpha = clamp(dtCol / 0.2);
+    rrect(cx, cy, colW, colH, 14);
+    g.clip();
+    // Crop each column from notion-ui-1.png
+    const srcX = 605 + cIdx * 242;
+    g.drawImage(imgs.ui1, srcX, 95, 238, 480, cx, cy, colW, colH);
+    g.restore();
+  });
+
+  g.restore();
+}
+
+// ============================================================================
+// ACTO 3 [8.0 - 14.0s]: Three Rapid UI Feature Moments Guided by Animated Cursor
+// ============================================================================
+function acto3(t) {
+  const dt = t - 8.0;
+  g.fillStyle = B.paper;
+  g.fillRect(0, 0, W, H);
+
+  // Sub-act index: 0 (8-10s: Reuniones), 1 (10-12s: Agente de código), 2 (12-14s: Búsqueda instantánea)
+  const subIdx = dt < 2.0 ? 0 : dt < 4.0 ? 1 : 2;
+  const subDt = dt - subIdx * 2.0;
+  const pCard = spring(subDt, 210, 22);
+
+  // Top progress indicator pills for the 3 features
+  const pills = [
+    '01 · Reuniones · Captura conocimiento',
+    '02 · Automatiza tareas · Agente de código',
+    '03 · Búsqueda instantánea con citas',
+  ];
+  pills.forEach((pl, i) => {
+    const active = i === subIdx;
+    const px = 140 + i * 555, py = 64, pw = 530, ph = 52;
+    rrect(px, py, pw, ph, 26);
+    g.fillStyle = active ? B.dark : '#FFFFFF';
+    g.fill();
+    g.lineWidth = 1.5;
+    g.strokeStyle = active ? B.dark : B.border;
+    g.stroke();
+    g.font = '700 18px EditorialSans';
+    g.fillStyle = active ? '#FFFFFF' : B.muted;
+    g.textAlign = 'center';
+    g.fillText(pl, px + pw / 2, py + 33);
+  });
+  g.textAlign = 'left';
+
+  // Main feature showcase stage
+  const sx = 140, sy = 145 + (1 - pCard) * 45, sw = 1640, sh = 845;
+  g.save();
+  g.shadowColor = 'rgba(17, 17, 17, 0.10)';
+  g.shadowBlur = 44;
+  g.shadowOffsetY = 18;
+  rrect(sx, sy, sw, sh, 24);
+  g.fillStyle = '#FFFFFF';
+  g.fill();
+  g.shadowColor = 'transparent';
+  g.lineWidth = 2;
+  g.strokeStyle = B.border;
+  g.stroke();
+
+  rrect(sx, sy, sw, sh, 24);
+  g.clip();
+
+  if (subIdx === 0) {
+    // Moment 1: Reuniones · Captura conocimiento
+    g.font = '700 20px EditorialMono';
+    g.fillStyle = B.blue;
+    g.fillText('● FUNCIÓN 01 · MEMORIA DE EQUIPO', sx + 64, sy + 78);
+
+    g.font = '800 58px EditorialSans';
+    g.fillStyle = B.dark;
+    g.fillText('Reuniones · Captura conocimiento.', sx + 64, sy + 148);
+    g.font = '500 26px EditorialSans';
+    g.fillStyle = B.muted;
+    g.fillText('Transcribe, resume acuerdos y asigna responsables sin tomar notas a mano.', sx + 64, sy + 195);
+
+    if (imgs.ui2) {
+      g.drawImage(imgs.ui2, 340, 345, 610, 480, sx + 64, sy + 235, 760, 560);
+    }
+
+    // Animated summary card popping out on right when cursor clicks at subDt = 0.85s
+    const pSum = spring(subDt - 0.85, 220, 20);
+    if (pSum > 0.01) {
+      const rx = sx + 875, ry = sy + 265 + (1 - pSum) * 40, rw = 695, rh = 490;
+      rrect(rx, ry, rw, rh, 20);
+      g.fillStyle = B.paper;
+      g.fill();
+      g.lineWidth = 2.5;
+      g.strokeStyle = B.blue;
+      g.stroke();
+
+      g.font = '700 18px EditorialMono';
+      g.fillStyle = B.blue;
+      g.fillText('✓ RESUMEN IA GENERADO AL INSTANTE', rx + 36, ry + 54);
+
+      const items = [
+        '1. Revisión de Diseño Técnico aprobada por Producto.',
+        '2. Migración de API móvil programada para el Sprint 27.',
+        '3. 4 tareas creadas y enlazadas al tablero de Ingeniería.',
+      ];
+      g.font = '600 21px EditorialSans';
+      g.fillStyle = B.dark;
+      items.forEach((it, k) => {
+        g.fillText(it, rx + 36, ry + 125 + k * 72);
+      });
+
+      rrect(rx + 36, ry + 365, 340, 64, 14);
+      g.fillStyle = B.blue;
+      g.fill();
+      g.font = '700 22px EditorialSans';
+      g.fillStyle = '#FFFFFF';
+      g.fillText('✓ Sincronizado con Lumi Labs', rx + 62, ry + 405);
+    }
+
+    const curP = easeOutCubic(clamp(subDt / 0.85));
+    drawCursor(lerp(420, 655, curP), lerp(760, 865, curP), 1.15, subDt > 0.75 && subDt < 1.05);
+
+  } else if (subIdx === 1) {
+    // Moment 2: Automatiza tareas repetitivas · Agente de código
+    g.font = '700 20px EditorialMono';
+    g.fillStyle = B.blue;
+    g.fillText('● FUNCIÓN 02 · AGENTES AUTÓNOMOS 24/7', sx + 64, sy + 78);
+
+    g.font = '800 58px EditorialSans';
+    g.fillStyle = B.dark;
+    g.fillText('Automatiza tareas · Agente de código.', sx + 64, sy + 148);
+    g.font = '500 26px EditorialSans';
+    g.fillStyle = B.muted;
+    g.fillText('El agente toma tickets del tablero, redacta la solución y actualiza el estado.', sx + 64, sy + 195);
+
+    if (imgs.ui1) {
+      g.drawImage(imgs.ui1, 590, 60, 1020, 500, sx + 64, sy + 235, 1020, 550);
+    }
+
+    // Coding Agent live card on right
+    const rx = sx + 1120, ry = sy + 235, rw = 460, rh = 550;
+    rrect(rx, ry, rw, rh, 20);
+    g.fillStyle = B.dark;
+    g.fill();
+
+    g.font = '700 17px EditorialMono';
+    g.fillStyle = '#68B5FF';
+    g.fillText('⚡ CODING AGENT · ACTIVO', rx + 32, ry + 54);
+
+    g.font = '700 30px EditorialSans';
+    g.fillStyle = '#FFFFFF';
+    g.fillText('Resolviendo ticket #418', rx + 32, ry + 108);
+
+    const steps = [
+      ['Leído:', 'Especificación OAuth2'],
+      ['Rama:', 'feat/oauth-token-refresh'],
+      ['Tests:', '14 / 14 aprobados (100%)'],
+      ['Estado:', 'Movido a En Revisión ✓'],
+    ];
+    steps.forEach(([k, v], idx) => {
+      const show = subDt > 0.25 + idx * 0.25;
+      if (!show) return;
+      rrect(rx + 32, ry + 150 + idx * 82, rw - 64, 64, 12);
+      g.fillStyle = idx === 3 ? 'rgba(15, 123, 108, 0.35)' : '#242424';
+      g.fill();
+      g.font = '700 18px EditorialMono';
+      g.fillStyle = idx === 3 ? '#6CE9A6' : '#A0A09C';
+      g.fillText(k, rx + 50, ry + 190 + idx * 82);
+      g.font = '600 20px EditorialSans';
+      g.fillStyle = '#FFFFFF';
+      g.fillText(v, rx + 145, ry + 190 + idx * 82);
+    });
+
+    const curP = easeOutCubic(clamp(subDt / 0.85));
+    drawCursor(lerp(520, 1280, curP), lerp(520, 680, curP), 1.15, subDt > 0.8 && subDt < 1.1);
+
+  } else {
+    // Moment 3: Instant search across workspace
+    g.font = '700 20px EditorialMono';
+    g.fillStyle = B.blue;
+    g.fillText('● FUNCIÓN 03 · BÚSQUEDA CON CITAS VERIFICADAS', sx + 64, sy + 78);
+
+    g.font = '800 58px EditorialSans';
+    g.fillStyle = B.dark;
+    g.fillText('Pregunta cualquier cosa. Respuesta inmediata.', sx + 64, sy + 148);
+
+    if (imgs.ui2) {
+      g.drawImage(imgs.ui2, 985, 355, 590, 470, sx + 64, sy + 210, 740, 580);
+    }
+
+    // Live search bar & instant citation answer on right
+    const rx = sx + 850, ry = sy + 210, rw = 720, rh = 580;
+    rrect(rx, ry, rw, rh, 20);
+    g.fillStyle = B.paper;
+    g.fill();
+    g.lineWidth = 2;
+    g.strokeStyle = B.border;
+    g.stroke();
+
+    // Search input box with typing animation
+    rrect(rx + 36, ry + 36, rw - 72, 76, 16);
+    g.fillStyle = '#FFFFFF';
+    g.fill();
+    g.lineWidth = 2.5;
+    g.strokeStyle = B.blue;
+    g.stroke();
+
+    const query = '¿Cuáles son nuestras mayores oportunidades en H2?';
+    const chars = Math.min(query.length, Math.floor(clamp(subDt / 0.75) * query.length));
+    g.font = '600 23px EditorialSans';
+    g.fillStyle = B.dark;
+    g.fillText(`🔍  ${query.slice(0, chars)}`, rx + 58, ry + 82);
+
+    // Answer card appearing after query types
+    if (subDt > 0.85) {
+      const pAns = spring(subDt - 0.85, 210, 21);
+      const ay = ry + 145 + (1 - pAns) * 35;
+      rrect(rx + 36, ay, rw - 72, 395, 16);
+      g.fillStyle = '#FFFFFF';
+      g.fill();
+      g.lineWidth = 1.5;
+      g.strokeStyle = B.border;
+      g.stroke();
+
+      g.font = '700 16px EditorialMono';
+      g.fillStyle = B.blue;
+      g.fillText('● NOTION AI · 3 FUENTES CITADAS DEL WORKSPACE', rx + 64, ay + 48);
+
+      g.font = '700 22px EditorialSans';
+      g.fillStyle = B.dark;
+      g.fillText('1. Expansión Enterprise (+42% pipeline en Q3)', rx + 64, ay + 110);
+      g.fillText('2. Automatización con Agentes de Código', rx + 64, ay + 165);
+      g.fillText('3. Consolidación de Wiki + Proyectos en 1 sistema', rx + 64, ay + 220);
+
+      // Citation pills
+      ['[1] H2 Deal Flow Dashboard', '[2] Roadmap_2026.md', '[3] Notas_Directiva'].forEach((cit, ci) => {
+        rrect(rx + 64 + ci * 205, ay + 285, 192, 44, 10);
+        g.fillStyle = B.blueSoft;
+        g.fill();
+        g.font = '600 14px EditorialMono';
+        g.fillStyle = B.blue;
+        g.fillText(cit, rx + 76 + ci * 205, ay + 312);
+      });
+    }
+
+    const curP = easeOutCubic(clamp(subDt / 0.85));
+    drawCursor(lerp(980, 1590, curP), lerp(520, 425, curP), 1.15, subDt > 0.78 && subDt < 1.05);
+  }
+
+  g.restore();
+}
+
+// ============================================================================
+// ACTO 4 [14.0 - 17.0s]: Dark Stage · "100 millones de usuarios en más de 50 países"
+// ============================================================================
+function acto4(t) {
+  const dt = t - 14.0;
+  g.fillStyle = B.dark;
+  g.fillRect(0, 0, W, H);
+
+  // Subtle radial glow
+  const gr = g.createRadialGradient(W / 2, H / 2, 50, W / 2, H / 2, 850);
+  gr.addColorStop(0, 'rgba(35, 131, 226, 0.16)');
+  gr.addColorStop(1, 'rgba(17, 17, 17, 0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, W, H);
+
+  const pIn = spring(dt, 190, 22);
+  const countP = easeOutCubic(clamp(dt / 1.15));
+  const usersM = Math.round(lerp(12, 100, countP));
+  const countries = Math.round(lerp(10, 50, countP));
+
+  g.save();
+  g.translate(W / 2, 165 + (1 - pIn) * 30);
+  g.textAlign = 'center';
+  g.font = '700 19px EditorialMono';
+  g.fillStyle = '#68B5FF';
+  g.fillText('ACTO 04 · ESCALA GLOBAL VERIFICADA EN NOTION.COM', 0, 0);
+
+  g.font = '800 186px EditorialSans';
+  g.fillStyle = '#FFFFFF';
+  g.fillText(`${usersM} millones`, 0, 210);
+
+  g.font = '700 58px EditorialSans';
+  g.fillStyle = '#D4D3CE';
+  g.fillText(`de usuarios en más de ${countries} países`, 0, 305);
+  g.restore();
+
+  // Verified customer & avatar badges row at bottom
+  const brands = ['OpenAI', 'Figma', 'NVIDIA', 'Toyota', 'Cursor', 'Ramp', 'Vercel'];
+  const totalW = brands.length * 210 + (brands.length - 1) * 20;
+  const x0 = (W - totalW) / 2;
+  brands.forEach((br, i) => {
+    const dtB = dt - (0.35 + i * 0.08);
+    if (dtB <= 0) return;
+    const pB = spring(dtB, 210, 20);
+    const bx = x0 + i * 230, by = 695 + (1 - pB) * 40;
+    g.save();
+    g.globalAlpha = clamp(dtB / 0.2);
+    rrect(bx, by, 210, 74, 18);
+    g.fillStyle = B.darkCard;
+    g.fill();
+    g.lineWidth = 1.5;
+    g.strokeStyle = 'rgba(255,255,255,0.16)';
+    g.stroke();
+
+    // Small status dot
+    g.fillStyle = B.blue;
+    g.beginPath();
+    g.arc(bx + 34, by + 37, 7, 0, Math.PI * 2);
+    g.fill();
+
+    g.font = '700 23px EditorialSans';
+    g.fillStyle = '#FFFFFF';
+    g.textAlign = 'left';
+    g.fillText(br, bx + 56, by + 45);
+    g.restore();
+  });
+}
+
+// ============================================================================
+// ACTO 5 [17.0 - 20.0s]: Clean Notion Logo Lockup + "notion.com"
+// ============================================================================
+function acto5(t) {
+  const dt = t - 17.0;
+  g.fillStyle = B.white;
+  g.fillRect(0, 0, W, H);
+
+  const pLogo = spring(dt, 190, 20);
+  drawNotionCube(W / 2, 365 + (1 - pLogo) * 45, 152 * pLogo, false);
+
+  g.save();
+  g.globalAlpha = clamp((dt - 0.12) / 0.25);
+  g.translate(W / 2, 555 + (1 - pLogo) * 30);
+  g.textAlign = 'center';
+  g.font = '800 92px EditorialSans';
+  g.fillStyle = B.dark;
+  g.fillText('Notion', 0, 0);
+
+  g.font = '500 30px EditorialSans';
+  g.fillStyle = B.muted;
+  g.fillText('Donde equipos y agentes piensan juntos.', 0, 56);
+
+  const pBtn = spring(dt - 0.35, 210, 20);
+  const bw = 390 * pBtn, bh = 74;
+  rrect(-bw / 2, 96, bw, bh, 37);
+  g.fillStyle = B.dark;
+  g.fill();
+
+  if (pBtn > 0.45) {
+    g.font = '700 30px EditorialMono';
+    g.fillStyle = '#FFFFFF';
+    g.textBaseline = 'middle';
+    g.fillText('notion.com', 0, 133);
+  }
+  g.restore();
+}
+
+function draw(t) {
+  const ct = clamp(t, 0, DUR);
+  g.globalAlpha = 1;
+  g.textAlign = 'left';
+  g.textBaseline = 'alphabetic';
+  g.setLineDash([]);
+  if (ct < 4.0) acto1(ct);
+  else if (ct < 8.0) acto2(ct);
+  else if (ct < 14.0) acto3(ct);
+  else if (ct < 17.0) acto4(ct);
+  else acto5(ct);
+}
+
+window.seek = (t) => {
+  draw(t);
+};
+window.seek(0);
+</script>

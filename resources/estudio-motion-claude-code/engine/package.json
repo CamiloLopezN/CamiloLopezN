@@ -1,0 +1,10 @@
+{
+  "name": "estudio-motion-engine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Motor determinista de motion graphics con window.seek(t), Playwright y FFmpeg.",
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}
